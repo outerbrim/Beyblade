@@ -1,4 +1,4 @@
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -294,7 +294,7 @@ function icon(pid, sz) {
 }
 
 /* ================= STATE + SYNC ================= */
-const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', camFps: 60, recOn321: false, me: '', swapSides: false, rival: ['', ''], personalOnly: false, showRandom: true, randomAny: false};
+const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', camFps: 60, recOn321: false, me: '', swapSides: false, rival: ['', ''], personalOnly: false, showRandom: true, randomAny: false, colors: ['blue', 'red']};
 let S = {};
 const CFG = window.BEYX_CONFIG || {};
 const Store = {
@@ -386,6 +386,24 @@ function derive() {
   for (const [pid, t] of Object.entries(d.types || {})) if (P[pid]) P[pid].type = t;
   S.counts = ownedCounts();
 }
+// Player colour swatches: [light-theme colour, dark-theme colour]
+const SWATCHES = {
+  blue: ['Blue', '#2A48F5', '#7088FF'], red: ['Red', '#E2432A', '#FF6B4F'], green: ['Green', '#0F9467', '#2EC48C'],
+  purple: ['Purple', '#8B4CE0', '#B184F7'], orange: ['Orange', '#D9690B', '#FF9A3D'], teal: ['Teal', '#0B8DA1', '#2CC6DA'],
+  pink: ['Pink', '#D2367A', '#F26AA8'], gold: ['Gold', '#B28100', '#EBC23C'], lime: ['Lime', '#5E9B0A', '#9BD93A'],
+  slate: ['Slate', '#4B5568', '#A7B2C6'],
+};
+let appliedColors = '';
+function applyColors() {
+  const c = (S.settings.colors || ['blue', 'red']).map((k, i) => SWATCHES[k] ? k : ['blue', 'red'][i]);
+  const key = c.join(); if (key === appliedColors) return; appliedColors = key;
+  const [a, b] = c.map(k => SWATCHES[k]);
+  const light = `--p1:${a[1]};--p1-soft:color-mix(in srgb,${a[1]} 13%,#fff);--p2:${b[1]};--p2-soft:color-mix(in srgb,${b[1]} 13%,#fff)`;
+  const dark = `--p1:${a[2]};--p1-soft:color-mix(in srgb,${a[2]} 20%,#161B24);--p2:${b[2]};--p2-soft:color-mix(in srgb,${b[2]} 20%,#161B24)`;
+  let st = document.getElementById('pcolors');
+  if (!st) { st = document.createElement('style'); st.id = 'pcolors'; document.head.appendChild(st); }
+  st.textContent = `:root{${light}}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${dark}}}:root[data-theme="dark"]{${dark}}`;
+}
 function saveSettings(patch) { Store.put('settings', {...S.settings, ...patch}); }
 function saveColl(c) { Store.put('collection', c); }
 function ownedCounts() {
@@ -474,6 +492,7 @@ function liveScore() {
 const VIEW_NAME = {tournaments: 'Tournaments', prefs: 'Settings'};
 function renderNav() {
   const cur = VIEWS.find(v => v[0] === view);
+  document.documentElement?.classList.toggle('noscroll', menuOpen);
   $('#nav').innerHTML = `<header class="topbar">
     <div class="tb-left">${acctChip()}<div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div></div>
     <nav class="tabs" aria-label="Sections">${VIEWS.filter(([k]) => k !== 'prefs').map(([k, l, ic]) => `<button class="tab" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}</nav>
@@ -482,7 +501,28 @@ function renderNav() {
     <button class="iconbtn menubtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button></div>
   </header>
   ${menuOpen ? `<div class="menu-back" data-a="menu-close"></div><nav class="menu" aria-label="Sections">${VIEWS.map(([k, l, ic]) => `<button class="menuitem" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}<div class="menu-hint">Swipe left or right on any screen to move to the next one.</div></nav>` : ''}`;
+  fitHeader();
 }
+function fitHeader() {
+  const hb = $('.topbar'); if (!hb || !hb.querySelector) return;
+  const tabs = hb.querySelector('.tabs'), L = hb.querySelector('.tb-left'), R = hb.querySelector('.tb-right');
+  if (!tabs || !L || !R) return;
+  // Try, in order: full labels truly centred, full labels centred in the space left over, then the same with icons only, then the menu.
+  const W = () => hb.clientWidth - 24;
+  const sym = () => tabs.scrollWidth + Math.max(L.scrollWidth, R.scrollWidth) * 2 + 40 <= W();
+  const asym = () => tabs.scrollWidth + L.scrollWidth + R.scrollWidth + 40 <= W();
+  hb.classList.remove('t-full', 't-icons', 't-menu', 't-asym');
+  for (const mode of ['t-full', 't-icons']) {
+    hb.classList.add(mode);
+    if (sym()) return;
+    hb.classList.add('t-asym');
+    if (asym()) return;
+    hb.classList.remove(mode, 't-asym');
+  }
+  hb.classList.add('t-menu');
+}
+let fitRaf = 0;
+window.addEventListener('resize', () => { cancelAnimationFrame(fitRaf); fitRaf = requestAnimationFrame(fitHeader); });
 function go(v, dir) {
   menuOpen = false; slideDir = dir || 0;
   if (view === v) { render(); return; }
@@ -495,6 +535,7 @@ function acctChip() {
   return Store.configured ? `<button class="btn sm discord" data-a="signin">Sign in</button>` : '';
 }
 function render(fromSync) {
+  try { applyColors(); } catch {}
   // don't wipe an open picker/sheet on background sync
   renderNav();
   const scroll = window.scrollY;
@@ -968,7 +1009,7 @@ function showRz() {
 }
 
 /* ================= COLLECTION ================= */
-let collTab = 'sets', setLine = 'All', setQ = '', partCat = 'blade', ownedOnly = false;
+let collTab = 'sets', setLine = 'All', setQ = '', partCat = 'blade', ownedOnly = false, partKind = 'all';
 function vCollection() {
   const owned = Object.values(S.coll.sets || {}).filter(Boolean).length;
   const partsOwned = Object.values(S.counts).filter(Boolean).length;
@@ -999,12 +1040,16 @@ function vParts() {
   const cats = [['blade', 'Blades'], ['assist', 'Assist Blades'], ['ratchet', 'Ratchets'], ['bit', 'Bits']];
   let list = Object.values(P).filter(p => p.cat === partCat);
   if (ownedOnly) list = list.filter(p => S.counts[p.id]);
+  const reps = Object.values(P).filter(p => p.base).length;
+  if (partKind === 'official') list = list.filter(p => !p.custom);
+  if (partKind === 'replica') list = list.filter(p => p.base);
   list.sort((a, b) => (S.counts[b.id] ? 1 : 0) - (S.counts[a.id] ? 1 : 0) || dn(a).localeCompare(dn(b), undefined, {numeric: true}));
   return `<div class="row" style="justify-content:space-between"><div class="seg" role="group" style="overflow-x:auto;max-width:100%">${cats.map(([k, l]) => `<button data-a="pcat" data-v="${k}" aria-pressed="${partCat === k}">${l}</button>`).join('')}</div>
+     <div class="seg" role="group" aria-label="Official or replica"><button data-a="pkind" data-v="all" aria-pressed="${partKind === 'all'}">All</button><button data-a="pkind" data-v="official" aria-pressed="${partKind === 'official'}">Official</button><button data-a="pkind" data-v="replica" aria-pressed="${partKind === 'replica'}">Replicas${reps ? ` (${reps})` : ''}</button></div>
      <div class="row"><button class="btn sm" data-a="bulkphotos">Import photos</button>${Object.keys(S.photos).length ? `<button class="btn sm" data-a="cleanphotos">Remove white backgrounds</button>` : ''}<button class="btn sm" data-a="addpart">${I.plus}Custom part</button></div></div>
      ${partCat === 'blade' ? `<div class="legend"><span><i style="background:var(--atk)"></i>Attack</span><span><i style="background:var(--def)"></i>Defence</span><span><i style="background:var(--sta)"></i>Stamina</span><span><i style="background:var(--bal)"></i>Balance</span><span><i style="background:var(--unk)"></i>Type not set</span></div>` : ''}
      ${list.length ? `<div class="pgrid">${list.map(p => `<button class="ptile${S.counts[p.id] ? '' : ' off'}" data-a="partdetail" data-v="${p.id}">${S.counts[p.id] ? `<span class="cnt">${S.counts[p.id]}</span>` : ''}${icon(p.id)}<span class="nm">${esc(dn(p))}</span>${tags(p)}</button>`).join('')}</div>`
-       : `<div class="empty"><h3>Nothing owned here yet</h3>Add sets you've bought, or tap any part to add it as a loose part.</div>`}`;
+       : partKind === 'replica' ? `<div class="empty"><h3>No replica ${CAT_LABEL[partCat].toLowerCase()}s yet</h3>Add one with Custom part and choose the official part it copies.</div>` : `<div class="empty"><h3>Nothing owned here yet</h3>Add sets you've bought, or tap any part to add it as a loose part.</div>`}`;
 }
 function cpFields(cat) {
   const offi = Object.values(P).filter(p => p.cat === cat && !p.custom).sort((a, b) => dn(a).localeCompare(dn(b), undefined, {numeric: true}));
@@ -1438,6 +1483,11 @@ function vPrefs() {
        : `<div class="muted">Discord sign-in isn't set up for this copy of the app yet, so everything is saved on this device only. See the README to connect Supabase.</div>`}
      <div class="row"><button class="btn" data-a="exportdata">${I.save}Export backup</button><button class="btn" data-a="importdata">Import backup</button></div>
      <div class="muted" style="font-size:.84rem">App version ${APP_VERSION}. A backup is a JSON file of all your data. Importing adds to what's here; items with the same ID are replaced. Use it to bring data over from the earlier version of this app.</div></div>
+   <div class="card" style="display:flex;flex-direction:column;gap:14px"><h3>Player colours</h3>
+     <div class="muted" style="font-size:.86rem;margin-top:-6px">Used everywhere a colour shows which side is which: the scorer, the score in the header, rivalries and match results.</div>
+     ${[0, 1].map(i => { const cur = (s.colors || ['blue', 'red'])[i]; return `<div class="colrow"><div class="colname"><span class="coldot" style="background:var(--p${i + 1})"></span><b>Player ${i + 1}</b>${i === 0 && player(s.me) ? ` <span class="muted">(${esc(pname(s.me))})</span>` : ''}</div>
+       <div class="swatches" role="group" aria-label="Player ${i + 1} colour">${Object.entries(SWATCHES).map(([k, v]) => `<button class="sw" data-a="pcolor" data-i="${i}" data-v="${k}" aria-pressed="${cur === k}" aria-label="${v[0]}" title="${v[0]}" style="--sl:${v[1]};--sd:${v[2]}"></button>`).join('')}</div></div>`; }).join('')}
+   </div>
    <div class="card" style="display:flex;flex-direction:column;gap:12px"><h3>Insights &amp; Build</h3>
      <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Only show my stats</b><div class="muted" style="font-size:.86rem">${player(s.me) ? 'Insights shows only your matches and hides everyone else\'s.' : 'Pick which player you are above first.'}</div></div><label class="row" style="gap:6px"><input type="checkbox" id="personalOnly" data-ch="tog" data-v="personalOnly"${s.personalOnly ? ' checked' : ''}${player(s.me) ? '' : ' disabled'}> On</label></div>
      <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Show the randomiser</b><div class="muted" style="font-size:.86rem">The slot-machine button on the Build screen.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="showRandom" data-ch="tog" data-v="showRandom"${s.showRandom !== false ? ' checked' : ''}> On</label></div>
@@ -1488,6 +1538,8 @@ document.addEventListener('click', async e => {
     case 'ctab': collTab = v; render(); break;
     case 'setline': setLine = v; render(); break;
     case 'owned': ownedOnly = !ownedOnly; render(); break;
+    case 'pcolor': { const cols = [...(S.settings.colors || ['blue', 'red'])]; const o = 1 - i; if (cols[o] === v) cols[o] = cols[i]; cols[i] = v; saveSettings({colors: cols}); render(); break; }
+    case 'pkind': partKind = v; render(); break;
     case 'combostats': comboSheet(combo(v)); break;
     case 'draftstats': comboSheet({...draft, id: draft.editing || ''}, 'Ratings'); break;
     case 'editstats': statsEditor(v); break;
@@ -1652,6 +1704,7 @@ document.addEventListener('touchstart', e => {
 }, {passive: true});
 document.addEventListener('touchmove', e => {
   if (e.touches.length > 1) { e.preventDefault(); return; } // no pinch zoom
+  if (menuOpen) { const m = e.target.closest('.menu'); if (!m || m.scrollHeight <= m.clientHeight) e.preventDefault(); return; }
   if (!sw || !sw.el) return;
   const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, now = Date.now();
   if (!sw.lock) {
