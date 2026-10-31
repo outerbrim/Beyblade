@@ -443,6 +443,8 @@ const I = {
   save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
 };
 
 /* ================= NAV ================= */
@@ -452,21 +454,44 @@ const VIEWS = [
 ];
 let view = 'score';
 function routeFromHash() { const h = location.hash.slice(1); view = VIEWS.some(v => v[0] === h) ? h : 'score'; }
+let menuOpen = false, slideDir = 0;
+function liveScore() {
+  if (!M || (!M.p[0] && !M.p[1] && !M.rounds.length)) return '';
+  const st = replay(); const n = i => esc((M.p[i] ? pname(M.p[i]) : 'P' + (i + 1)).split(' ')[0]);
+  return `<button class="livepill" data-a="nav" data-v="score" aria-label="Current match score">${M.done ? '<span class="lp-done">Final</span>' : Cam.recording ? '<i class="lp-rec" aria-label="Recording"></i>' : ''}<span class="lp-n" style="color:var(--p1)">${n(0)}</span><b class="num">${st.score[0]}</b><span class="muted">–</span><b class="num">${st.score[1]}</b><span class="lp-n" style="color:var(--p2)">${n(1)}</span></button>`;
+}
+const VIEW_NAME = {tournaments: 'Tournaments', prefs: 'Settings'};
 function renderNav() {
-  $('#nav').innerHTML = `<div class="logo">BEY<b>X</b></div>${acctChip()}` + VIEWS.map(([k, l, ic]) => `<button class="navbtn" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${l}</span></button>`).join('');
+  const cur = VIEWS.find(v => v[0] === view);
+  $('#nav').innerHTML = `<header class="topbar">
+    <button class="iconbtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
+    <div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div>
+    ${liveScore()}
+    <button class="iconbtn" data-a="nav" data-v="prefs" aria-label="Settings"${view === 'prefs' ? ' aria-current="page"' : ''}>${I.gear}</button>
+    ${acctChip()}
+  </header>
+  ${menuOpen ? `<div class="menu-back" data-a="menu-close"></div><nav class="menu" aria-label="Sections">${VIEWS.map(([k, l, ic]) => `<button class="menuitem" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}<div class="menu-hint">Swipe left or right on any screen to move to the next one.</div></nav>` : ''}`;
+}
+function go(v, dir) {
+  menuOpen = false; slideDir = dir || 0;
+  if (view === v) { render(); return; }
+  try { history.replaceState(null, '', '#' + v); } catch {}
+  view = v; render(); window.scrollTo(0, 0);
 }
 let lastRenderKey = '';
 function acctChip() {
-  if (Store.user) { const p = Store.profile; return `<button class="acct" data-a="nav" data-v="prefs" title="Signed in as ${esc(p.name)}">${p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : `<span class="av" style="background:var(--accent)">${esc(p.name[0] || '?')}</span>`}<span>${esc(p.name)}</span></button>`; }
-  return Store.configured ? `<button class="acct discord" data-a="signin">Sign in</button>` : '';
+  if (Store.user) { const p = Store.profile; return `<button class="avbtn" data-a="nav" data-v="prefs" title="Signed in as ${esc(p.name)}" aria-label="Account">${p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : `<span>${esc(p.name[0] || '?')}</span>`}</button>`; }
+  return Store.configured ? `<button class="btn sm discord" data-a="signin">Sign in</button>` : '';
 }
 function render(fromSync) {
   // don't wipe an open picker/sheet on background sync
   renderNav();
   const scroll = window.scrollY;
   const fn = {score: vScore, build: vBuild, collection: vCollection, insights: vInsights, tournaments: vTourneys, players: vPlayers, clips: vClips, prefs: vPrefs}[view];
-  $('#view').innerHTML = `<div class="wrap">${fn()}</div>`;
+  $('#view').innerHTML = `<div class="wrap${slideDir ? (slideDir > 0 ? ' in-next' : ' in-prev') : ''}">${fn()}</div>`;
+  slideDir = 0;
   if (view === 'clips') hydrateClips();
+  if (Cam.stream) Cam.paintQS();
   if (fromSync) window.scrollTo(0, scroll);
 }
 
@@ -504,26 +529,16 @@ function vScore() {
   const st = replay();
   const comp = M.mode === 'competitive';
   const clips = S.clips.filter(c => c.matchId === M.id).length;
-  const playersOpts = (sel) => `<option value="">Choose player…</option>` + S.players.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.name)}</option>`).join('') + `<option value="__new">+ New player…</option>`;
+  const playersOpts = (sel) => `<option value="">Player…</option>` + S.players.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.name)}</option>`).join('') + `<option value="__new">+ New player…</option>`;
   const side = i => {
     const pid = M.p[i]; const wr = pid ? recordWin(pid, M.mode) : null;
-    const lc = liveCombo(i, st);
-    let pick = '';
-    if (comp) {
-      const d = deck(M.deck[i]);
-      pick = `<select id="deck${i}" data-ch="deck" data-i="${i}" aria-label="Deck for player ${i + 1}"><option value="">Choose deck…</option>${S.decks.map(x => `<option value="${x.id}"${x.id === M.deck[i] ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` +
-        (d ? `<div class="combochips">${d.combos.map((cid, k) => { const c = combo(cid); return c ? `<button class="cchip" data-a="deckpick" data-i="${i}" data-v="${k}" aria-pressed="${st.deckIdx[i] === k}">${icon(c.blade)}<span>${k + 1}. ${esc(comboLabel(c))}</span></button>` : ''; }).join('')}</div>` : '');
-    } else {
-      pick = `<select id="combo${i}" data-ch="combo" data-i="${i}" aria-label="Bey for player ${i + 1}"><option value="">Which bey? (optional)</option>${S.combos.map(c => `<option value="${c.id}"${c.id === M.combo[i] ? ' selected' : ''}>${esc(comboLabel(c))}</option>`).join('')}</select>` +
-        (lc ? `<div class="combochips"><span class="cchip" aria-pressed="true">${icon(lc.blade)}${lc.ratchet ? icon(lc.ratchet) : ''}${icon(lc.bit)}<span>${esc(comboLabel(lc))}</span></span></div>` : '');
-    }
     const left = M.fl - st.faults[i];
     const off = M.done ? ' disabled' : '';
     return `<section class="side s${i}" aria-label="Player ${i + 1}">
-      <div class="top"><select id="pl${i}" data-ch="player" data-i="${i}" aria-label="Player ${i + 1}">${playersOpts(pid)}</select></div>
-      <div class="scoreline"><div><div class="score">${st.score[i]}</div><div class="pips">${Array.from({length: M.ptw}, (_, k) => `<i class="${k < st.score[i] ? 'on' : ''}"></i>`).join('')}</div></div>
-        <div class="wr">${pid ? `<b>${wr.w + wr.l ? wr.rate + '%' : '—'}</b>${comp ? 'Competitive' : 'Casual'} win rate<br>${wr.w}–${wr.l}` : 'Pick a player to<br>track win rate'}</div></div>
-      <div class="beypick">${pick}</div>
+      <select class="psel" id="pl${i}" data-ch="player" data-i="${i}" aria-label="Player ${i + 1}">${playersOpts(pid)}</select>
+      <div class="scoreline"><div class="score">${st.score[i]}</div>
+        <div class="wr">${pid ? `<b>${wr.w + wr.l ? wr.rate + '%' : '—'}</b><span class="num">${wr.w}–${wr.l}</span>` : ''}</div></div>
+      <div class="pips">${Array.from({length: M.ptw}, (_, k) => `<i class="${k < st.score[i] ? 'on' : ''}"></i>`).join('')}</div>
       <div class="pts">
         <button class="pt" data-a="pt" data-i="${i}" data-v="spin"${off}><small>SPIN</small><b>+1</b></button>
         <button class="pt" data-a="pt" data-i="${i}" data-v="burst"${off}><small>BURST</small><b>+2</b></button>
@@ -533,23 +548,33 @@ function vScore() {
       <button class="faultbtn" data-a="fault" data-i="${i}"${off} aria-label="Launch error, ${left} left">F: ${left}<span class="fd">${Array.from({length: M.fl}, (_, k) => `<i class="${k < left ? '' : 'used'}"></i>`).join('')}</span></button>
     </section>`;
   };
+  const beyPick = i => {
+    const lc = liveCombo(i, st);
+    if (comp) {
+      const d = deck(M.deck[i]);
+      return `<select id="deck${i}" data-ch="deck" data-i="${i}" aria-label="Deck for player ${i + 1}"><option value="">Deck…</option>${S.decks.map(x => `<option value="${x.id}"${x.id === M.deck[i] ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` +
+        (d ? `<div class="combochips">${d.combos.map((cid, k) => { const c = combo(cid); return c ? `<button class="cchip" data-a="deckpick" data-i="${i}" data-v="${k}" aria-pressed="${st.deckIdx[i] === k}">${icon(c.blade)}<span>${k + 1}. ${esc(comboLabel(c))}</span></button>` : ''; }).join('')}</div>` : '');
+    }
+    return `<select id="combo${i}" data-ch="combo" data-i="${i}" aria-label="Bey for player ${i + 1}"><option value="">Which bey?</option>${S.combos.map(c => `<option value="${c.id}"${c.id === M.combo[i] ? ' selected' : ''}>${esc(comboLabel(c))}</option>`).join('')}</select>` +
+      (lc ? `<div class="combochips"><span class="cchip" aria-pressed="true">${icon(lc.blade)}${lc.ratchet ? icon(lc.ratchet) : ''}${icon(lc.bit)}</span></div>` : '');
+  };
   const labels = {spin: 'Spin', burst: 'Burst', over: 'Over', xtreme: 'Xtreme', penalty: 'Penalty', fault: 'F'};
   const log = M.rounds.map(r => `<span class="chip s${r.s}">${esc(pname(M.p[r.s]).split(' ')[0])} · ${labels[r.t]}${r.pts ? ' +' + r.pts : ''}</span>`).join('');
   const tsel = comp ? `<select id="tsel" data-ch="tourney" aria-label="Tournament"><option value="">No tournament</option>${S.tourneys.map(t => `<option value="${t.id}"${t.id === M.tid ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select>` : '';
   const needDeck = comp && S.decks.length === 0 ? `<div class="note">Competitive games use a deck of 3 combos for each player. <button class="btn sm" data-a="nav" data-v="build">Build a deck</button></div>` : '';
   const needCombo = !comp && S.combos.length === 0 ? `<div class="note">Tip: build combos to tag which bey each player used. That powers the combo and part stats.</div>` : '';
-  return `<div class="head"><div><div class="eyebrow">Scorer</div><h1>${M.done ? 'Match finished' : 'Live match'}</h1></div>
-     <div class="seg mode" role="group" aria-label="Game type"><button data-a="mode" data-v="casual" aria-pressed="${!comp}">Casual</button><button data-a="mode" data-v="competitive" aria-pressed="${comp}">Competitive</button></div></div>
-   <div class="sbar card" style="padding:10px 12px">
-     <div class="target">First to <b class="num">${M.ptw}</b> · <span class="num">${M.fl}</span> launch errors a round</div>
-     <div class="row">${tsel}
-       <button class="btn" data-a="countdown">${I.timer}3-2-1</button>
-       <button class="btn" data-a="record" style="color:var(--p2)">${I.rec}${Cam.recording ? 'Recording…' : Cam.stream ? 'Camera open' : 'Record'}${clips ? ` <span class="num">(${clips})</span>` : ''}</button>
-       <button class="btn" data-a="undo"${M.rounds.length ? '' : ' disabled'}>${I.undo}Undo</button>
-       <button class="btn ghost" data-a="newmatch">New match</button></div>
-   </div>
-   ${needDeck}${needCombo}
+  return `<div class="sbar">
+     <div class="seg mode" role="group" aria-label="Game type"><button data-a="mode" data-v="casual" aria-pressed="${!comp}">Casual</button><button data-a="mode" data-v="competitive" aria-pressed="${comp}">Competitive</button></div>
+     <div class="tools">
+       <button class="btn sm" data-a="countdown" aria-label="Countdown">${I.timer}<span>3-2-1</span></button>
+       <button class="btn sm" data-a="record" style="color:var(--p2)" aria-label="Record">${I.rec}<span>${Cam.recording ? 'Rec' : Cam.stream ? 'Camera' : 'Record'}${clips ? ` (${clips})` : ''}</span></button>
+       <button class="btn sm" data-a="undo"${M.rounds.length ? '' : ' disabled'} aria-label="Undo">${I.undo}<span>Undo</span></button>
+       <button class="btn sm ghost" data-a="newmatch">New</button>
+     </div></div>
+   <div class="target">First to <b class="num">${M.ptw}</b> · <span class="num">${M.fl}</span> launch errors a round${M.done ? ' · <b style="color:var(--good)">Match saved</b>' : ''}</div>
+   ${tsel}${needDeck}${needCombo}
    <div class="arena">${side(0)}${side(1)}</div>
+   <div class="card beys"><div class="eyebrow">${comp ? 'Decks' : 'Beys in play'}</div><div class="beygrid"><div class="beycol s0">${beyPick(0)}</div><div class="beycol s1">${beyPick(1)}</div></div></div>
    ${log ? `<div class="card"><div class="eyebrow" style="margin-bottom:8px">Round log</div><div class="log">${log}</div></div>` : ''}`;
 }
 function score(i, type) {
@@ -668,12 +693,13 @@ const Cam = {
     const mimeType = this.mime();
     try { this.rec = new MediaRecorder(this.stream, mimeType ? {mimeType, videoBitsPerSecond: 10e6} : undefined); }
     catch { return toast('Recording isn\'t supported in this browser'); }
-    this.chunks = []; this.matchId = M?.id || ''; this.recFps = this.fps;
+    this.chunks = []; this.matchId = M?.id || ''; this.recFps = this.fps; this.round = M ? M.rounds.filter(r => r.t !== 'fault').length + 1 : 0;
+    const round = this.round, t0 = Date.now();
     const rec = this.rec;
     rec.ondataavailable = e => { if (e.data.size) this.chunks.push(e.data); };
     rec.onstop = () => {
       const blob = new Blob(this.chunks, {type: rec.mimeType || mimeType || 'video/mp4'});
-      this.chunks = []; if (blob.size) saveClip(blob, this.matchId, this.recFps);
+      this.chunks = []; if (blob.size) saveClip(blob, this.matchId, this.recFps, {round, dur: Math.round((Date.now() - t0) / 1000)});
     };
     rec.start(1000); this.recording = true; this.t0 = Date.now();
     this.timer = setInterval(() => { const el = $('#camTime'); if (el) el.textContent = this.elapsed(); }, 500);
@@ -686,8 +712,10 @@ const Cam = {
     const d = $('#camdock'); if (!this.stream) { d.innerHTML = ''; return; }
     let v = d.querySelector('video');
     if (!v) {
-      d.innerHTML = `<div class="camdock" role="region" aria-label="Camera"><video autoplay muted playsinline></video><div class="cbar" id="cbar"></div></div>`;
+      d.innerHTML = `<div class="camdock" role="region" aria-label="Camera"><div class="cam-vid"><video autoplay muted playsinline></video></div><div class="cam-side"><div class="cbar" id="cbar"></div><div class="qs" id="camqs"></div></div></div>`;
       v = d.querySelector('video'); v.srcObject = this.stream;
+      const fit = () => { if (v.videoWidth) d.firstElementChild.style.setProperty('--ar', `${v.videoWidth} / ${v.videoHeight}`); };
+      v.addEventListener('loadedmetadata', fit); v.addEventListener('resize', fit);
     } else if (v.srcObject !== this.stream) v.srcObject = this.stream;
     d.firstElementChild.classList.toggle('min', this.min);
     $('#cbar').innerHTML = `
@@ -695,9 +723,17 @@ const Cam = {
       ${this.recording ? `<span class="recdot"><i></i><span id="camTime">${this.elapsed()}</span></span>` : `<select id="camfps" data-ch="camfps" aria-label="Frame rate">${this.options().map(f => `<option value="${f}"${f === (S.settings.camFps || 60) ? ' selected' : ''}>${f} fps</option>`).join('')}</select>`}
       <span style="flex:1"></span>
       <button class="btn sm ghost" data-a="cam-flip" aria-label="Switch camera">⇄</button>
-      <button class="btn sm ghost" data-a="cam-min" aria-label="${this.min ? 'Show preview' : 'Hide preview'}">${this.min ? '▢' : '–'}</button>
+      <button class="btn sm ghost cam-minbtn" data-a="cam-min" aria-label="${this.min ? 'Show preview' : 'Hide preview'}">${this.min ? '▢' : '–'}</button>
       <button class="btn sm ghost" data-a="cam-close" aria-label="Close camera">${I.x}</button>
-      <span class="muted" style="width:100%;font-size:.74rem">${this.recording ? 'Saves to Clips with this match when it ends' : `Live ${this.fps} fps · camera max ${this.maxFps} fps`}</span>`;
+      <span class="muted cam-note">${this.recording ? 'Saves to Clips with this match' : `Live ${this.fps} fps · max ${this.maxFps} fps · turn sideways for full view`}</span>`;
+    this.paintQS();
+  },
+  paintQS() {
+    const q = $('#camqs'); if (!q || !M) return;
+    const st = replay(); const off = M.done ? ' disabled' : '';
+    q.innerHTML = [0, 1].map(i => `<div class="qs-row s${i}"><div class="qs-name"><span>${esc(M.p[i] ? pname(M.p[i]) : 'Player ' + (i + 1))}</span><b class="num">${st.score[i]}</b></div>
+      <div class="qs-btns"><button class="pt" data-a="pt" data-i="${i}" data-v="spin"${off}><small>SPIN</small><b>+1</b></button><button class="pt" data-a="pt" data-i="${i}" data-v="burst"${off}><small>BURST</small><b>+2</b></button><button class="pt" data-a="pt" data-i="${i}" data-v="over"${off}><small>OVER</small><b>+2</b></button><button class="pt x" data-a="pt" data-i="${i}" data-v="xtreme"${off}><small>XTREME</small><b>+3</b></button><button class="faultbtn" data-a="fault" data-i="${i}"${off}>F: ${M.fl - st.faults[i]}</button></div></div>`).join('')
+      + `<div class="row" style="gap:6px"><button class="btn sm" data-a="countdown">${I.timer}3-2-1</button><button class="btn sm" data-a="undo"${M.rounds.length ? '' : ' disabled'}>${I.undo}Undo</button></div>`;
   }
 };
 
@@ -956,7 +992,7 @@ async function handlePhoto(file) {
 }
 
 /* ================= INSIGHTS ================= */
-let insMode = 'competitive', insPlayer = '';
+let insMode = 'casual', insPlayer = '';
 function finishColors() { return {spin: 'var(--sta)', burst: 'var(--bal)', over: 'var(--def)', xtreme: 'var(--atk)', penalty: 'var(--unk)'}; }
 function vInsights() {
   const ms = S.matches.filter(m => m.mode === insMode && (!insPlayer || m.p.includes(insPlayer)));
@@ -1075,6 +1111,7 @@ function playerProfile(pid) {
 
 /* ================= CLIPS ================= */
 let clipFilter = 'all', clipQuota = null;
+const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 function vClips() {
   let list = S.clips;
   if (clipFilter === 'fav') list = list.filter(c => c.fav);
@@ -1084,45 +1121,74 @@ function vClips() {
   const storage = q ? `<div class="meter" aria-label="Storage use"><i style="width:${Math.min(100, localBytes / q.quota * 100)}%;background:var(--p2)"></i><i style="width:${Math.min(100, Math.max(0, q.usage - localBytes) / q.quota * 100)}%;background:var(--muted)"></i></div>
       <div class="legend"><span><i style="background:var(--p2)"></i>Clips <b class="num">${fmtBytes(localBytes)}</b></span><span><i style="background:var(--muted)"></i>Other app data <b class="num">${fmtBytes(Math.max(0, q.usage - localBytes))}</b></span><span><i style="background:var(--surface-2);border:1px solid var(--line)"></i>Free <b class="num">${fmtBytes(Math.max(0, q.quota - q.usage))}</b></span></div>`
     : `<div class="muted">Checking storage…</div>`;
+  // one card per match, its clips (rounds) inside
+  const groups = new Map();
+  [...list].sort((a, b) => a.date - b.date).forEach(c => { const k = c.matchId || '__imported'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); });
+  const ordered = [...groups.entries()].sort((a, b) => b[1][b[1].length - 1].date - a[1][a[1].length - 1].date);
+  const row = (c, idx) => { const here = localClips.has(c.id);
+    return `<div class="cliprow"><button class="cthumb" data-a="${here ? 'playclip' : ''}" data-v="${c.id}" aria-label="Play clip"${here ? '' : ' disabled'}>${here ? `<video data-clip="${c.id}" muted playsinline preload="metadata"></video><span class="cplay">${I.play}</span>` : `<span class="cother">Other<br>device</span>`}</button>
+      <div class="cinfo"><b>${c.round ? 'Round ' + c.round : 'Clip ' + (idx + 1)}</b><span class="muted">${fmtTime(c.date)}${c.dur ? ' · ' + fmtDur(c.dur) : ''} · ${fmtBytes(c.size)}${c.fps ? ' · ' + c.fps + ' fps' : ''}</span></div>
+      <div class="cacts"><button class="iconbtn sm${c.fav ? ' fav' : ''}" data-a="favclip" data-v="${c.id}" aria-label="${c.fav ? 'Unfavourite' : 'Favourite'}">${c.fav ? I.starF : I.star}</button><button class="iconbtn sm" data-a="saveclip" data-v="${c.id}" aria-label="Save to gallery"${here ? '' : ' disabled'}>${I.save}</button><button class="iconbtn sm del" data-a="delclip" data-v="${c.id}" aria-label="Delete clip">${I.trash}</button></div></div>`; };
+  const card = ([k, cs]) => {
+    const m = S.matches.find(x => x.id === k); const c0 = cs[0];
+    const n = m?.names || (k === '__imported' ? null : c0.names) || ['?', '?'];
+    const head = k === '__imported' ? `<div><div class="eyebrow">Imported</div><h3>Videos from your gallery</h3></div>`
+      : `<div style="min-width:0"><div class="eyebrow">${fmtDate(m?.date || c0.date)} · ${fmtTime(m?.date || c0.date)} · ${esc(m?.mode || c0.mode || '')}</div>
+         <h3 class="cg-score"><span style="color:var(--p1)">${esc(n[0])}</span> <span class="num">${m ? m.score[0] + '–' + m.score[1] : 'vs'}</span> <span style="color:var(--p2)">${esc(n[1])}</span></h3></div>
+         ${m ? `<span class="chip good">${esc(n[m.winner])} won</span>` : `<span class="chip">Not finished</span>`}`;
+    return `<section class="card cgroup"><div class="cg-head">${head}</div><div class="cg-list">${cs.map(row).join('')}</div>
+      ${cs.length > 1 ? `<div class="row" style="justify-content:flex-end"><button class="btn sm ghost danger" data-a="delgroup" data-v="${k}">${I.trash}Delete all ${cs.length}</button></div>` : ''}</section>`;
+  };
   return `<div class="head"><div><div class="eyebrow">Recordings</div><h1>Clips</h1></div>
      <div class="row"><div class="seg" role="group"><button data-a="clipf" data-v="all" aria-pressed="${clipFilter === 'all'}">All</button><button data-a="clipf" data-v="fav" aria-pressed="${clipFilter === 'fav'}">Favourites</button>${clipMatch ? `<button data-a="clipf" data-v="match" aria-pressed="${clipFilter === 'match'}">This match</button>` : ''}</div>
-     <button class="btn" data-a="importclip">${I.plus}Import video</button></div></div>
-   <div class="card storage"><div class="row" style="justify-content:space-between"><h3>Storage on this device</h3><span class="muted num" style="font-size:.85rem">${q ? fmtBytes(Math.max(0, q.quota - q.usage)) + ' free for clips' : ''}</span></div>${storage}
-     <div class="muted" style="font-size:.82rem">This is the space your browser gives this app, usually a share of your phone's free storage. Clips stay on the device that recorded them; match details sync everywhere. Save favourites to your gallery to keep them safe.</div></div>
-   ${list.length ? `<div class="clipgrid">${list.map(c => { const m = S.matches.find(x => x.id === c.matchId); const here = localClips.has(c.id); const n = m?.names || c.names || ['?', '?'];
-     return `<article class="clip"><div class="thumb" data-a="${here ? 'playclip' : ''}" data-v="${c.id}" role="${here ? 'button' : ''}" aria-label="Play clip">${here ? `<video data-clip="${c.id}" muted playsinline preload="metadata"></video>` : `<span style="font-size:.85rem;opacity:.8;padding:12px;text-align:center">Saved on another device</span>`}
-         <span class="badge chip">${esc(c.mode || m?.mode || '')}</span></div>
-       <div class="meta"><b>${esc(n[0])} vs ${esc(n[1])}${m ? ` · ${m.score[0]}–${m.score[1]}` : ''}</b><span class="muted" style="font-size:.84rem">${fmtDate(c.date)} ${fmtTime(c.date)} · ${fmtBytes(c.size)}${m ? '' : ' · match not finished'}</span></div>
-       <div class="acts"><button class="${c.fav ? 'fav' : ''}" data-a="favclip" data-v="${c.id}" aria-label="${c.fav ? 'Unfavourite' : 'Favourite'}">${c.fav ? I.starF : I.star}</button><button data-a="saveclip" data-v="${c.id}" aria-label="Save to device"${here ? '' : ' disabled'}>${I.save}</button><button data-a="delclip" data-v="${c.id}" aria-label="Delete">${I.trash}</button></div></article>`; }).join('')}</div>`
-     : `<div class="empty"><h3>${clipFilter === 'fav' ? 'No favourites yet' : 'No clips yet'}</h3>Tap Record in the scorer to film a battle. It's saved here with the date, players and score.</div>`}`;
+     <button class="btn sm" data-a="importclip">${I.plus}Import video</button></div></div>
+   <details class="card storage"><summary class="row" style="justify-content:space-between;cursor:pointer"><h3>Storage on this device</h3><span class="muted num" style="font-size:.85rem">${q ? fmtBytes(Math.max(0, q.quota - q.usage)) + ' free' : ''}</span></summary>${storage}
+     <div class="muted" style="font-size:.82rem">This is the space your browser gives this app, usually a share of your phone's free storage. Clips stay on the device that recorded them; match details sync everywhere. Save favourites to your gallery to keep them safe.</div></details>
+   ${ordered.length ? ordered.map(card).join('')
+     : `<div class="empty"><h3>${clipFilter === 'fav' ? 'No favourites yet' : 'No clips yet'}</h3>Tap Record in the scorer to film a battle. Each recording is saved under its match with the round, date, players and score.</div>`}`;
 }
 let clipMatch = '';
 async function hydrateClips() {
   if (!clipQuota) { try { const e = await navigator.storage?.estimate?.(); if (e) { clipQuota = {usage: e.usage || 0, quota: e.quota || 0}; if (view === 'clips') render(true); return; } } catch {} }
   document.querySelectorAll('video[data-clip]').forEach(async v => { const u = await clipURL(v.dataset.clip); if (u) v.src = u + '#t=0.3'; });
 }
-async function saveClip(file, matchId, fps) {
+async function saveClip(file, matchId, fps, extra = {}) {
   if (!file) return;
   const id = uid();
   try { await IDB.put(id, file); } catch (e) { return toast('Not enough space to save this clip on this device.'); }
   localClips.add(id); clipQuota = null;
   const m = M && M.id === matchId ? M : S.matches.find(x => x.id === matchId);
   Store.put('clip_' + id, {kind: 'clip', id, matchId: matchId || '', date: Date.now(), size: file.size, type: file.type || 'video/mp4', fav: false, fps: fps || 30, device: DEVICE,
-    names: m ? m.p.map(pname) : ['Unlinked', 'clip'], mode: m?.mode || ''});
+    names: m ? m.p.map(pname) : ['Unlinked', 'clip'], mode: m?.mode || '', ...extra});
   toast(matchId ? 'Clip saved with this match' : 'Clip imported');
   render();
 }
 async function playClip(id) {
   const c = S.clips.find(x => x.id === id); const u = await clipURL(id); if (!u) return toast('This clip is stored on another device.');
-  const m = S.matches.find(x => x.id === c.matchId); const n = m?.names || c.names;
+  const m = S.matches.find(x => x.id === c.matchId); const n = m?.names || c.names || ['?', '?'];
   const fps = c.fps || 30;
-  openSheet(`${n[0]} vs ${n[1]}`, `<video id="pv" class="player-v" src="${u}" controls playsinline></video>
-    <div><div class="eyebrow" style="margin-bottom:6px">Playback speed</div><div class="seg" role="group" id="spd">${[0.1, 0.25, 0.5, 1].map(r => `<button data-a="speed" data-v="${r}" aria-pressed="${r === 1}">${r}×</button>`).join('')}</div></div>
-    <div class="row"><button class="btn" data-a="frame" data-v="-1">◀ Frame</button><button class="btn" data-a="frame" data-v="1">Frame ▶</button>
-      <label class="f" style="flex-direction:row;align-items:center;gap:8px">Recorded at <select id="clipfps" data-ch="clipfps" data-v="${id}">${[24, 30, 60, 120, 240].map(f => `<option value="${f}"${f === fps ? ' selected' : ''}>${f} fps</option>`).join('')}</select></label></div>
-    <div class="note">Set the frame rate the clip was filmed at so frame stepping is exact. Higher-fps clips from your phone's slow-mo mode play back smoother at 0.1×–0.25×.</div>
-    ${m ? `<div class="muted">${fmtDate(m.date)} · ${m.mode} · ${m.score[0]}–${m.score[1]}, ${esc(n[m.winner])} won</div>` : ''}`);
+  $('#layer').innerHTML = `<div class="viewer" role="dialog" aria-label="Clip player">
+    <div class="vtop"><button class="btn sm" data-a="viewer-close">${I.x}Close</button>
+      <div class="vt"><b>${esc(n[0])} vs ${esc(n[1])}${c.round ? ' · Round ' + c.round : ''}</b><span>${fmtDate(c.date)} ${fmtTime(c.date)}${m ? ` · ${m.score[0]}–${m.score[1]}` : ''}</span></div></div>
+    <div class="vstage" id="vstage"><video id="pv" src="${u}" playsinline webkit-playsinline disablepictureinpicture preload="auto"></video><button class="vbig" data-a="vtoggle" id="vbig" aria-label="Play">${I.play}</button></div>
+    <div class="vctrl">
+      <div class="row" style="flex-wrap:nowrap;gap:10px"><button class="iconbtn" data-a="vtoggle" id="vpp" aria-label="Play">${I.play}</button><input type="range" id="vscrub" data-in="scrub" min="0" max="1000" value="0" aria-label="Position" style="flex:1;min-width:0"><span class="num vtime" id="vtime">0:00</span></div>
+      <div class="row" style="justify-content:space-between;gap:8px"><div class="seg" role="group" id="spd" aria-label="Speed">${[0.1, 0.25, 0.5, 1].map(r => `<button data-a="speed" data-v="${r}" aria-pressed="${r === 1}">${r}×</button>`).join('')}</div>
+        <div class="row" style="gap:6px"><button class="btn sm" data-a="frame" data-v="-1" aria-label="Previous frame">◀</button><button class="btn sm" data-a="frame" data-v="1" aria-label="Next frame">▶</button><select id="clipfps" data-ch="clipfps" data-v="${id}" aria-label="Recorded frame rate">${[24, 30, 60, 120, 240].map(f => `<option value="${f}"${f === fps ? ' selected' : ''}>${f} fps</option>`).join('')}</select></div></div>
+      <div class="row" style="justify-content:space-between"><div class="row" style="gap:6px"><button class="btn sm${c.fav ? ' fav' : ''}" data-a="favclip" data-v="${id}">${c.fav ? I.starF : I.star}${c.fav ? 'Favourite' : 'Favourite'}</button><button class="btn sm" data-a="saveclip" data-v="${id}">${I.save}Save to gallery</button></div><button class="btn sm danger" data-a="delclip" data-v="${id}">${I.trash}Delete</button></div>
+    </div></div>`;
+  const v = $('#pv'), sc = $('#vscrub'), tm = $('#vtime');
+  let raf = 0;
+  const tick = () => { if (v.duration) { sc.value = Math.round(v.currentTime / v.duration * 1000); tm.textContent = fmtDur(v.currentTime); } if (!v.paused) raf = requestAnimationFrame(tick); };
+  const sync = () => { const p = v.paused; $('#vpp').innerHTML = p ? I.play : I.pause; $('#vbig').hidden = !p; cancelAnimationFrame(raf); tick(); };
+  v.addEventListener('play', sync); v.addEventListener('pause', sync); v.addEventListener('ended', sync); v.addEventListener('seeked', tick); v.addEventListener('loadedmetadata', tick);
+  v.addEventListener('click', () => v.paused ? v.play() : v.pause());
+  // swipe down on the video to close
+  let y0 = null; const stg = $('#vstage');
+  stg.addEventListener('touchstart', e => { y0 = e.touches.length === 1 ? e.touches[0].clientY : null; }, {passive: true});
+  stg.addEventListener('touchend', e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 90) closeViewer(); y0 = null; }, {passive: true});
 }
+function closeViewer() { const v = $('#pv'); try { v?.pause(); } catch {} $('#layer').innerHTML = ''; }
 async function shareOrDownload(blob, filename, title) {
   const file = new File([blob], filename, {type: blob.type || 'application/octet-stream'});
   if (navigator.canShare && navigator.canShare({files: [file]})) {
@@ -1168,7 +1234,9 @@ document.addEventListener('click', async e => {
   const a = el.dataset.a, v = el.dataset.v, i = el.dataset.i !== undefined && el.dataset.i !== '' ? +el.dataset.i : null;
   if (a === 'sheet-bg') { if (e.target === el) closeSheet(); return; }
   switch (a) {
-    case 'nav': location.hash = v; break;
+    case 'nav': go(v); break;
+    case 'menu': menuOpen = !menuOpen; renderNav(); break;
+    case 'menu-close': menuOpen = false; renderNav(); break;
     case 'sheet-close': closeSheet(); break;
     case 'confirm-yes': { const f = pendingConfirm; pendingConfirm = null; closeSheet(); f && f(); break; }
     // scorer
@@ -1243,7 +1311,11 @@ document.addEventListener('click', async e => {
     case 'clipf': clipFilter = v; render(); break;
     case 'importclip': $('#importIn').value = ''; $('#importIn').click(); break;
     case 'playclip': playClip(v); break;
-    case 'favclip': { const c = S.clips.find(x => x.id === v); Store.put('clip_' + v, {...c, fav: !c.fav}); render(); break; }
+    case 'viewer-close': closeViewer(); break;
+    case 'vtoggle': { const pv = $('#pv'); if (pv) pv.paused ? pv.play() : pv.pause(); break; }
+    case 'delgroup': { const ids = S.clips.filter(c => (c.matchId || '__imported') === v).map(c => c.id);
+      confirmSheet('Delete these clips?', `All ${ids.length} videos for this match are removed from this device for good. The match result stays in your stats.`, 'Delete all', async () => { for (const id of ids) { try { await IDB.del(id); } catch {} localClips.delete(id); if (clipURLs[id]) { URL.revokeObjectURL(clipURLs[id]); delete clipURLs[id]; } Store.del('clip_' + id); } clipQuota = null; render(); toast(`Deleted ${ids.length} clips`); }); break; }
+    case 'favclip': { const c = S.clips.find(x => x.id === v); Store.put('clip_' + v, {...c, fav: !c.fav}); if ($('#pv')) { el.innerHTML = (!c.fav ? I.starF : I.star) + 'Favourite'; el.classList.toggle('fav', !c.fav); } render(); break; }
     case 'saveclip': saveClipToDevice(v); break;
     case 'delclip': confirmSheet('Delete clip?', 'The video is removed from this device for good.', 'Delete', async () => { try { await IDB.del(v); } catch {} localClips.delete(v); if (clipURLs[v]) { URL.revokeObjectURL(clipURLs[v]); delete clipURLs[v]; } clipQuota = null; Store.del('clip_' + v); render(); }); break;
     case 'speed': { const pv = $('#pv'); if (pv) pv.playbackRate = +v; document.querySelectorAll('#spd button').forEach(b => b.setAttribute('aria-pressed', b === el)); break; }
@@ -1260,7 +1332,7 @@ document.addEventListener('click', async e => {
     case 'cam-min': Cam.min = !Cam.min; Cam.paint(); break;
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#layer').innerHTML) { closeSheet(); } if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) { menuOpen = false; renderNav(); } if (e.key === 'Escape' && $('#layer').innerHTML) { if ($('#pv')) closeViewer(); else closeSheet(); } if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); } });
 document.addEventListener('change', e => {
   const el = e.target, ch = el.dataset.ch; if (!ch) return; const i = +el.dataset.i;
   if (ch === 'player') { if (el.value === '__new') { el.value = M.p[i] || ''; return playerForm(null, i); } if (M.rounds.length && !M.done) { el.value = M.p[i]; return toast('Players are locked once scoring starts'); } M.p[i] = el.value; persistLive(); render(); }
@@ -1281,8 +1353,9 @@ document.addEventListener('input', e => {
   if (k === 'pickq') { pickQ = e.target.value; const pos = e.target.selectionStart; setSheet(pickerBody()); const n = $('#pickq'); n.focus(); n.setSelectionRange(pos, pos); }
   if (k === 'setq') { setQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $('#setq'); n.focus(); n.setSelectionRange(pos, pos); }
   if (k === 'deckname') deckDraft.name = e.target.value;
+  if (k === 'scrub') { const pv = $('#pv'); if (pv?.duration) pv.currentTime = e.target.value / 1000 * pv.duration; }
 });
-$('#camIn').addEventListener('change', e => saveClip(e.target.files[0], M?.id));
+$('#camIn').addEventListener('change', e => saveClip(e.target.files[0], M?.id, 30, {round: M ? M.rounds.filter(r => r.t !== 'fault').length + 1 : 0}));
 $('#importIn').addEventListener('change', e => saveClip(e.target.files[0], ''));
 $('#backupIn').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
@@ -1297,6 +1370,28 @@ $('#backupIn').addEventListener('change', async e => {
 $('#photoIn').addEventListener('change', e => e.target.files[0] && handlePhoto(e.target.files[0]));
 $('#bulkIn').addEventListener('change', e => e.target.files.length && handleBulk([...e.target.files]));
 window.addEventListener('hashchange', () => { routeFromHash(); render(); window.scrollTo(0, 0); });
+
+/* ================= GESTURES ================= */
+let sw = null;
+document.addEventListener('touchstart', e => {
+  sw = null;
+  if (e.touches.length !== 1 || menuOpen || $('#layer').innerHTML) return;
+  const t = e.touches[0];
+  if (t.clientX < 24 || t.clientX > innerWidth - 24) return; // leave the browser's edge-swipe alone
+  if (e.target.closest('input,select,textarea,video,.camdock,.tbl-wrap,.seg,.combochips,.noswipe')) return;
+  sw = {x: t.clientX, y: t.clientY, t: Date.now()};
+}, {passive: true});
+document.addEventListener('touchend', e => {
+  if (!sw) return; const t = e.changedTouches[0];
+  const dx = t.clientX - sw.x, dy = t.clientY - sw.y, dt = Date.now() - sw.t; sw = null;
+  if (dt > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+  const i = VIEWS.findIndex(v => v[0] === view), j = i + (dx < 0 ? 1 : -1);
+  if (j < 0 || j >= VIEWS.length) return;
+  go(VIEWS[j][0], dx < 0 ? 1 : -1);
+}, {passive: true});
+// no pinch zoom (iOS ignores the viewport setting, so block the gesture itself)
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, {passive: false});
 
 /* ================= BOOT ================= */
 routeFromHash();
