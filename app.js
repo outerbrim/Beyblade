@@ -1,4 +1,4 @@
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -233,10 +233,13 @@ BITS.forEach(([c, n, t]) => reg('bit', c, n ? `${n}` : `Bit ${c}`, t, {code: c})
 function bladeId(n) { const hf = Object.keys(HB_FIRST).find(k => HB_FIRST[k] === n); if (hf) n = hf; n = FROM_HASBRO[n] || n; const id = 'blade:' + slug(n); if (!P[id]) reg('blade', slug(n), n, ''); return id; }
 const dn = p => (p.alt && S.settings?.naming !== 'takara') ? p.alt : p.name;
 const pn = id => P[id] ? dn(P[id]) : id;
-const SETS_X = SETS.map(([code, name, kind, line, combos, note]) => ({
-  key: code + '~' + slug(name), code, name, kind, line, note: note || '',
-  combos: combos.map(s => { const [b, a, r, t] = s.split('|'); return {blade: b ? bladeId(b) : '', assist: a ? 'assist:' + a : '', ratchet: r ? 'ratchet:' + r : '', bit: t ? 'bit:' + t : ''}; })
-}));
+const SETS_X = SETS.map(([code, name, kind, line, combos, note]) => {
+  const cs = combos.map(s => { const [b, a, r, t] = s.split('|'); return {blade: b ? bladeId(b) : '', assist: a ? 'assist:' + a : '', ratchet: r ? 'ratchet:' + r : '', bit: t ? 'bit:' + t : ''}; });
+  // Hasbro products sit under the series their blades belong to
+  let ln = line, brand = '';
+  if (line === 'Hasbro') { brand = 'Hasbro'; const bl = P[cs[0]?.blade]?.line; ln = ['BX', 'UX', 'CX'].includes(bl) ? bl : 'Other'; }
+  return {key: code + '~' + slug(name), code: brand && code === 'Hasbro' ? 'Hasbro' : code, name, kind, line: ln, brand, note: note || '', combos: cs};
+});
 const SET_BY_KEY = Object.fromEntries(SETS_X.map(s => [s.key, s]));
 function comboParts(c) { return [c.blade, c.assist, c.ratchet, c.bit].filter(Boolean); }
 function comboLabel(c) {
@@ -291,7 +294,7 @@ function icon(pid, sz) {
 }
 
 /* ================= STATE + SYNC ================= */
-const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', camFps: 60, recOn321: false, me: '', swapSides: false, rival: ['', '']};
+const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', camFps: 60, recOn321: false, me: '', swapSides: false, rival: ['', ''], personalOnly: false, showRandom: true, randomAny: false};
 let S = {};
 const CFG = window.BEYX_CONFIG || {};
 const Store = {
@@ -362,12 +365,13 @@ const Store = {
 };
 function derive() {
   const d = Store.docs;
-  S = {settings: {...DEFAULT_SETTINGS, ...(d.settings || {})}, coll: {sets: {}, extra: {}, ...(d.collection || {})}, photos: {},
+  S = {settings: {...DEFAULT_SETTINGS, ...(d.settings || {})}, coll: {sets: {}, extra: {}, ...(d.collection || {})}, photos: {}, pstats: {},
        combos: [], decks: [], players: [], matches: [], tourneys: [], clips: []};
   for (const [k, v] of Object.entries(d)) {
     if (!v || !v.kind) continue;
     if (v.kind === 'part' && !P[v.pid]) reg(v.cat, v.key, v.name, v.type || (v.base && P[v.base] ? P[v.base].type0 : '') || '', {code: v.code || v.name, custom: true, line: 'Custom', base: v.base || ''});
     if (v.kind === 'photo') S.photos[v.pid] = v.src;
+    if (v.kind === 'pstat') S.pstats[v.pid] = v.vals;
     if (v.kind === 'combo') S.combos.push(v);
     if (v.kind === 'deck') S.decks.push(v);
     if (v.kind === 'player') S.players.push(v);
@@ -434,7 +438,9 @@ const I = {
   trophy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8"/></svg>',
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 0 1 5.5 5"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/></svg>',
-  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  dice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="16" cy="8" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="8" cy="16" r="1.4" fill="currentColor"/><circle cx="16" cy="16" r="1.4" fill="currentColor"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   rec: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>',
   undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
@@ -471,9 +477,10 @@ function renderNav() {
   $('#nav').innerHTML = `<header class="topbar">
     ${acctChip()}
     <div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div>
+    <nav class="tabs" aria-label="Sections">${VIEWS.filter(([k]) => k !== 'prefs').map(([k, l, ic]) => `<button class="tab" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}</nav>
     ${liveScore()}
     <button class="iconbtn" data-a="nav" data-v="prefs" aria-label="Settings"${view === 'prefs' ? ' aria-current="page"' : ''}>${I.gear}</button>
-    <button class="iconbtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
+    <button class="iconbtn menubtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
   </header>
   ${menuOpen ? `<div class="menu-back" data-a="menu-close"></div><nav class="menu" aria-label="Sections">${VIEWS.map(([k, l, ic]) => `<button class="menuitem" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}<div class="menu-hint">Swipe left or right on any screen to move to the next one.</div></nav>` : ''}`;
 }
@@ -765,12 +772,12 @@ function vCombos() {
   const name = draft.blade ? comboLabel(draft) : 'New combo';
   const list = S.combos.length ? `<div class="clist">${S.combos.map(c => {
       const st = comboStats()[c.id];
-      return `<div class="citem"><div class="icons">${comboParts(c).map(p => icon(p)).join('')}</div><div class="t"><b>${esc(comboLabel(c))}</b><small>${st ? `${st.w}–${st.l} rounds · ${pct(st.w, st.w + st.l)}% win` : 'Not battled yet'}${ownWarn(c)}</small></div>
+      return `<div class="citem"><button class="citap" data-a="combostats" data-v="${c.id}" aria-label="Ratings for ${esc(comboLabel(c))}"><div class="icons">${comboParts(c).map(p => icon(p)).join('')}</div><div class="t"><b>${esc(comboLabel(c))}</b><small>${st ? `${st.w}–${st.l} rounds · ${pct(st.w, st.w + st.l)}% win` : 'Not battled yet'}${ownWarn(c)}</small></div></button>
         <button class="btn sm" data-a="editcombo" data-v="${c.id}">Edit</button><button class="btn sm ghost danger" data-a="delcombo" data-v="${c.id}" aria-label="Delete combo">${I.trash}</button></div>`; }).join('')}</div>`
     : `<div class="empty"><h3>No combos yet</h3>Pick a blade, ratchet and bit above, then save.</div>`;
   return `<div class="card" style="display:flex;flex-direction:column;gap:14px">
       <div class="row" style="justify-content:space-between"><div><div class="eyebrow">${draft.editing ? 'Editing combo' : 'Combo builder'}</div><div class="comboname">${esc(name)}</div></div>
-      <div class="row">${draft.blade || draft.editing ? `<button class="btn ghost" data-a="cleardraft">Clear</button>` : ''}<button class="btn primary" data-a="savecombo"${ok ? '' : ' disabled'}>${draft.editing ? 'Save changes' : 'Save combo'}</button></div></div>
+      <div class="row">${S.settings.showRandom !== false ? `<button class="btn" data-a="randomise">${I.dice}Randomise</button>` : ''}${draft.blade ? `<button class="btn" data-a="draftstats">Ratings</button>` : ''}${draft.blade || draft.editing ? `<button class="btn ghost" data-a="cleardraft">Clear</button>` : ''}<button class="btn primary" data-a="savecombo"${ok ? '' : ' disabled'}>${draft.editing ? 'Save changes' : 'Save combo'}</button></div></div>
       <div class="slots">${slot('blade', 'Blade')}${slot('assist', 'Assist', !isCX(draft.blade))}${slot('ratchet', 'Ratchet', draft.bit === 'bit:Tr')}${slot('bit', 'Bit')}</div>
       <div class="muted" style="font-size:.85rem">Parts you own show first. Turn on “Show every part” in the picker to use anything in the database.</div>
     </div>
@@ -824,30 +831,169 @@ function deckIssues(ids) {
   return out;
 }
 
+/* ================= RATINGS ================= */
+// Stats printed on the back of the box, for parts we have them for. Anything else is estimated from the part's type.
+const OFFICIAL = {
+  'blade:tricera-press': {A: 20, D: 65, S: 15}, 'blade:dran-dagger': {A: 50, D: 25, S: 25},
+  'ratchet:M-85': {A: 8, D: 19, S: 13, H: 85}, 'ratchet:7-55': {A: 6, D: 14, S: 10, H: 55},
+  'bit:BS': {A: 5, D: 60, S: 30, X: 5, R: 30}, 'bit:K': {A: 35, D: 25, S: 15, X: 25, R: 80},
+};
+const STAT_KEYS = {blade: ['A', 'D', 'S'], assist: ['A', 'D', 'S'], ratchet: ['A', 'D', 'S', 'H'], bit: ['A', 'D', 'S', 'X', 'R']};
+const STAT_NAME = {A: 'Attack', D: 'Defence', S: 'Stamina', X: 'Dash', R: 'Burst resist', H: 'Height'};
+const BIT_PROFILE = {A: {A: 40, D: 15, S: 10, X: 40, R: 30}, D: {A: 5, D: 50, S: 30, X: 5, R: 35}, S: {A: 5, D: 25, S: 55, X: 10, R: 30}, B: {A: 25, D: 30, S: 30, X: 20, R: 35}};
+function bitKind(p) {
+  if (p.type) return p.type;
+  const n = (p.name + ' ' + p.code).toLowerCase();
+  if (/needle|spike|wedge|dot/.test(n)) return 'D';
+  if (/ball|orb|glide|hexa|elevate|narrow|merge/.test(n)) return 'S';
+  if (/flat|rush|accel|quake|cyclone|jolt|zap|level|turbo|kick/.test(n)) return 'A';
+  return 'B';
+}
+function partStats(pid) {
+  const p = P[pid]; if (!p) return null;
+  const src = S.pstats[pid] ? 'yours' : OFFICIAL[pid] ? 'box' : (p.base && (S.pstats[p.base] || OFFICIAL[p.base])) ? 'box' : 'est';
+  const known = S.pstats[pid] || OFFICIAL[pid] || (p.base && (S.pstats[p.base] || OFFICIAL[p.base]));
+  if (known) return {v: known, src};
+  if (p.cat === 'blade') return {v: ({A: {A: 55, D: 25, S: 20}, D: {A: 20, D: 60, S: 20}, S: {A: 20, D: 25, S: 55}, B: {A: 35, D: 35, S: 30}})[p.type] || {A: 33, D: 34, S: 33}, src};
+  if (p.cat === 'assist') return {v: {A: 10, D: 10, S: 10}, src};
+  if (p.cat === 'ratchet') {
+    const [pr, ht] = String(p.code).split('-'); const h = +ht || 60, prongs = /^\d$/.test(pr) ? (+pr || 10) : 9;
+    return {v: {A: Math.round(4 + (85 - h) / 6), D: Math.round(10 + prongs * 1.1), S: Math.round(8 + (h - 50) / 8), H: h}, src};
+  }
+  return {v: {...BIT_PROFILE[bitKind(p)]}, src};
+}
+function comboRating(c) {
+  const b = partStats(c.blade)?.v || {}, a = c.assist ? partStats(c.assist)?.v || {} : {}, r = c.ratchet ? partStats(c.ratchet)?.v || {} : {}, t = partStats(c.bit)?.v || {};
+  const sc = k => Math.min(100, Math.round(((b[k] || 0) + (a[k] || 0) * .5 + (r[k] || 0) + (t[k] || 0) * .5) / 1.15));
+  return {A: sc('A'), D: sc('D'), S: sc('S'), R: Math.min(100, Math.round((t.R || 30) * .6 + (r.D || 12) * 2)), X: t.X || 0, H: r.H || 0};
+}
+const bar = (k, val, max = 100) => `<div class="sbarrow"><span class="sk">${STAT_NAME[k]}</span><span class="sb"><i class="k-${k}" style="width:${Math.min(100, val / max * 100)}%"></i></span><b class="num">${val}</b></div>`;
+function synergy(bladeId) {
+  // which ratchets and bits have won the most rounds alongside this blade, from your matches
+  const rr = {}, tt = {};
+  for (const m of S.matches) for (const rd of m.rounds) { if (!rd.c || rd.t === 'fault') continue; rd.c.forEach((c, i) => { if (!c || c.b !== bladeId) return; const win = rd.s === i;
+    if (c.r) { const o = rr[c.r] = rr[c.r] || {w: 0, n: 0}; o.n++; if (win) o.w++; } if (c.t) { const o = tt[c.t] = tt[c.t] || {w: 0, n: 0}; o.n++; if (win) o.w++; } }); }
+  const best = o => Object.entries(o).filter(([, x]) => x.n >= 3).sort((x, y) => y[1].w / y[1].n - x[1].w / x[1].n)[0];
+  return {r: best(rr), t: best(tt)};
+}
+function comboSheet(c, title) {
+  const R = comboRating(c), st = c.id ? comboStats()[c.id] : null, syn = synergy(c.blade);
+  const parts = comboParts(c);
+  const srcNote = s => s === 'box' ? 'From the box' : s === 'yours' ? 'Your numbers' : 'Estimated';
+  openSheet(title || comboLabel(c), `
+    <div class="rating"><div class="row" style="justify-content:space-between"><h3>${esc(comboLabel(c))}</h3>${c.blade && P[c.blade]?.type ? `<span class="tag ty t-${P[c.blade].type}">${TYPE_LABEL[P[c.blade].type]}</span>` : ''}</div>
+      ${bar('A', R.A)}${bar('D', R.D)}${bar('S', R.S)}${bar('R', R.R)}${R.X ? bar('X', R.X) : ''}${R.H ? `<div class="sbarrow"><span class="sk">Height</span><span class="sb"><i class="k-H" style="width:${R.H}%"></i></span><b class="num">${R.H}</b></div>` : ''}
+      <div class="muted" style="font-size:.8rem">Overall rating combines each part's stats. Parts marked "Estimated" use their type until you add the numbers from the box.</div></div>
+    ${st || syn.r || syn.t ? `<div class="note" style="display:flex;flex-direction:column;gap:4px">${st ? `<span><b>Your results:</b> ${st.w}–${st.l} rounds (${pct(st.w, st.w + st.l)}% won)</span>` : ''}
+      ${syn.r ? `<span>Best ratchet with ${esc(pn(c.blade))}: <b>${esc(pn(syn.r[0]))}</b> (${syn.r[1].w}/${syn.r[1].n} rounds)</span>` : ''}${syn.t ? `<span>Best bit with ${esc(pn(c.blade))}: <b>${esc(pn(syn.t[0]))}</b> (${syn.t[1].w}/${syn.t[1].n} rounds)</span>` : ''}</div>` : ''}
+    <div class="partstats">${parts.map(pid => { const p = P[pid], ps = partStats(pid);
+      return `<div class="pstat"><div class="row" style="flex-wrap:nowrap;gap:10px">${icon(pid, 56)}<div style="min-width:0;flex:1"><div class="eyebrow">${CAT_LABEL[p.cat]}</div><b>${esc(dn(p))}</b><div>${tags(p)}</div></div><span class="srcchip ${ps.src}">${srcNote(ps.src)}</span></div>
+        ${STAT_KEYS[p.cat].map(k => bar(k, ps.v[k] ?? 0, k === 'H' ? 100 : 100)).join('')}
+        <div class="row" style="justify-content:flex-end"><button class="btn sm ghost" data-a="editstats" data-v="${pid}">Enter box stats</button></div></div>`; }).join('')}</div>`);
+}
+function statsEditor(pid) {
+  const p = P[pid], ps = partStats(pid);
+  openSheet('Box stats: ' + dn(p), `<div class="muted">Copy the numbers from the back of the packaging. They replace the estimate everywhere this part is used.</div>
+    <div class="grid g2">${STAT_KEYS[p.cat].map(k => `<label class="f">${STAT_NAME[k]}<input type="number" inputmode="numeric" min="0" max="100" id="st_${k}" value="${ps.v[k] ?? ''}"></label>`).join('')}</div>
+    <div class="row" style="justify-content:space-between">${S.pstats[pid] ? `<button class="btn ghost danger" data-a="clearstats" data-v="${pid}">Use estimate again</button>` : '<span></span>'}<div class="row"><button class="btn" data-a="sheet-close">Cancel</button><button class="btn primary" data-a="savestats" data-v="${pid}">Save</button></div></div>`);
+}
+
+/* ================= RANDOMISER ================= */
+const REEL_CATS = ['blade', 'assist', 'ratchet', 'bit'];
+let RZ = null;
+function randPool(cat) {
+  let all = Object.values(P).filter(p => p.cat === cat && p.id !== 'bit:Tr' && p.line !== 'Collab').map(p => p.id);
+  if (cat === 'blade') all = all.filter(id => P[id].line !== 'Collab');
+  const owned = all.filter(id => S.counts[id]);
+  if (S.settings.randomAny) return {ids: all, any: true};
+  return owned.length ? {ids: owned, any: false} : {ids: all, any: true, fallback: true};
+}
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function openRandomiser() {
+  RZ = {cur: {blade: '', assist: '', ratchet: '', bit: ''}, lock: {}, spinning: 0, pools: Object.fromEntries(REEL_CATS.map(c => [c, randPool(c)]))};
+  const fb = REEL_CATS.filter(c => RZ.pools[c].fallback && c !== 'assist');
+  $('#layer').innerHTML = `<div class="rz" role="dialog" aria-label="Randomiser">
+    <div class="vtop"><button class="btn sm" data-a="rz-close">${I.x}Close</button><div class="vt"><b>Randomiser</b><span>${S.settings.randomAny ? 'Every part in the game' : 'Parts you own'}${fb.length ? ` · none owned for ${fb.join(', ')}, so using all` : ''}</span></div></div>
+    <div class="reels">${REEL_CATS.map(c => `<div class="reel" data-cat="${c}"><div class="reel-label">${CAT_LABEL[c] === 'Assist Blade' ? 'Assist' : CAT_LABEL[c]}</div>
+      <div class="reel-win" data-reel="${c}"><div class="reel-strip" id="strip-${c}">${reelItem(c === 'assist' ? '' : '')}</div><div class="reel-line"></div></div>
+      <button class="lockbtn" data-a="rz-lock" data-v="${c}" aria-pressed="false">Hold</button></div>`).join('')}</div>
+    <div class="slot-res" id="rzRes"><b>Pull down on the reels</b><span>or tap Spin</span></div>
+    <div class="row" style="justify-content:center;gap:10px;padding:0 16px 16px"><button class="btn primary spinbtn" data-a="rz-spin">${I.dice}Spin</button><button class="btn" data-a="rz-rate" id="rzRate" disabled>Ratings</button><button class="btn" data-a="rz-save" id="rzSave" disabled>Save combo</button></div>
+  </div>`;
+  document.querySelectorAll('.reel-win').forEach(w => {
+    let y0 = null;
+    w.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; }, {passive: true});
+    w.addEventListener('touchmove', e => { if (y0 !== null) e.preventDefault(); }, {passive: false});
+    w.addEventListener('touchend', e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 25) spinAll(); y0 = null; }, {passive: true});
+  });
+  $('.reels').addEventListener('wheel', e => { if (e.deltaY < -20 || e.deltaY > 20) { e.preventDefault(); spinAll(); } }, {passive: false});
+}
+function reelItem(pid) {
+  if (!pid) return `<div class="ri empty"><span>—</span></div>`;
+  return `<div class="ri">${icon(pid, 54)}<span>${esc(dn(P[pid]))}</span></div>`;
+}
+function spinReel(cat, target, dur) {
+  const strip = $('#strip-' + cat); if (!strip) return;
+  const pool = RZ.pools[cat].ids; const H = 84;
+  const items = []; for (let k = 0; k < 22; k++) items.push(pool.length ? pick(pool) : '');
+  items.push(target, pool.length ? pick(pool) : '');
+  strip.style.transition = 'none'; strip.style.transform = 'translateY(0)';
+  strip.innerHTML = [RZ.cur[cat] || ''].concat(items).map(reelItem).join('');
+  void strip.offsetHeight;
+  strip.style.transition = `transform ${dur}ms cubic-bezier(.12,.75,.16,1)`;
+  strip.style.transform = `translateY(${-(items.length - 1) * H}px)`;
+  RZ.spinning++;
+  setTimeout(() => { RZ.spinning--; RZ.cur[cat] = target; vib(12); if (!RZ.spinning) showRz(); }, dur + 30);
+}
+function spinAll() {
+  if (!RZ || RZ.spinning) return;
+  vib(20);
+  const t = {};
+  for (const c of REEL_CATS) t[c] = RZ.lock[c] ? RZ.cur[c] : (RZ.pools[c].ids.length ? pick(RZ.pools[c].ids) : '');
+  if (!isCX(t.blade)) t.assist = '';
+  else if (!t.assist) t.assist = pick(RZ.pools.assist.ids) || '';
+  REEL_CATS.forEach((c, k) => {
+    if (RZ.lock[c] && !(c === 'assist' && !isCX(t.blade))) return;
+    if (c === 'assist' && !t.assist) { const s = $('#strip-assist'); s.style.transition = 'none'; s.style.transform = 'translateY(0)'; s.innerHTML = reelItem(''); RZ.cur.assist = ''; return; }
+    spinReel(c, t[c], 1300 + k * 350 + Math.random() * 200);
+  });
+  $('#rzRes').innerHTML = '<b>Spinning…</b><span>&nbsp;</span>';
+  $('#rzRate').disabled = $('#rzSave').disabled = true;
+}
+function showRz() {
+  const c = RZ.cur; if (!c.blade || !c.bit) return;
+  const R = comboRating(c);
+  $('#rzRes').innerHTML = `<b>${esc(comboLabel(c))}</b><span>Attack ${R.A} · Defence ${R.D} · Stamina ${R.S}</span>`;
+  $('#rzRate').disabled = $('#rzSave').disabled = false;
+}
+
 /* ================= COLLECTION ================= */
 let collTab = 'sets', setLine = 'All', setQ = '', partCat = 'blade', ownedOnly = false;
 function vCollection() {
   const owned = Object.values(S.coll.sets || {}).filter(Boolean).length;
   const partsOwned = Object.values(S.counts).filter(Boolean).length;
   return `<div class="head"><div><div class="eyebrow">Collection</div><h1>${owned} sets · ${partsOwned} parts</h1></div>
-    <div class="row">${namingSeg()}<div class="seg" role="group"><button data-a="ctab" data-v="sets" aria-pressed="${collTab === 'sets'}">Sets</button><button data-a="ctab" data-v="parts" aria-pressed="${collTab === 'parts'}">Parts</button></div></div></div>` +
+    <div class="ctools">${namingSeg()}<div class="row" style="gap:8px"><div class="seg" role="group"><button data-a="ctab" data-v="sets" aria-pressed="${collTab === 'sets'}">Sets</button><button data-a="ctab" data-v="parts" aria-pressed="${collTab === 'parts'}">Parts</button></div>
+      <button class="ownbtn" data-a="owned" aria-pressed="${ownedOnly}">${ownedOnly ? I.check : ''}Owned only</button></div></div></div>` +
     (collTab === 'sets' ? vSets() : vParts());
 }
 function namingSeg() { const h = S.settings.naming !== 'takara'; return `<div class="seg" role="group" aria-label="Blade names"><button data-a="naming" data-v="hasbro" aria-pressed="${h}">Hasbro names</button><button data-a="naming" data-v="takara" aria-pressed="${!h}">Takara names</button></div>`; }
 function vSets() {
-  const lines = ['All', 'Hasbro', 'BX', 'UX', 'CX', 'Other', 'Owned'];
+  const lines = ['All', 'BX', 'UX', 'CX', 'Other'];
   let list = SETS_X;
-  if (setLine === 'Owned') list = list.filter(s => S.coll.sets[s.key]); else if (setLine !== 'All') list = list.filter(s => s.line === setLine);
+  if (!lines.includes(setLine)) setLine = 'All';
+  if (setLine !== 'All') list = list.filter(s => s.line === setLine);
+  if (ownedOnly) list = list.filter(s => S.coll.sets[s.key]);
   if (setQ) list = list.filter(s => (s.code + ' ' + s.name).toLowerCase().includes(setQ.toLowerCase()));
   return `<div class="card" style="display:flex;flex-direction:column;gap:12px">
     <div class="row"><input type="search" id="setq" data-in="setq" placeholder="Search sets or codes" value="${esc(setQ)}" style="flex:1;min-width:0">
     <div class="seg" role="group" style="overflow-x:auto;max-width:100%">${lines.map(l => `<button data-a="setline" data-v="${l}" aria-pressed="${setLine === l}">${l}</button>`).join('')}</div></div>
-    <div class="note">Hasbro is what Kmart, Target, Big W and Toys"R"Us stock. BX, UX and CX are the Japanese Takara Tomy releases. Set how many of each product you own. Its blade, ratchet and bit go straight into your parts. Random boosters and deck sets add their main combo; add extra pulls under Parts.</div>
+    <div class="note">Hasbro products (what Kmart, Target, Big W and Toys"R"Us stock) are filed under the series of their blades and tagged Hasbro. Set how many of each product you own. Its blade, ratchet and bit go straight into your parts. Random boosters and deck sets add their main combo; add extra pulls under Parts.</div>
     <div class="setlist">${list.map(s => { const q = S.coll.sets[s.key] || 0; const parts = s.combos.flatMap(comboParts);
       return `<div class="setrow"><span class="code">${esc(s.code)}</span>
         <div style="display:flex;gap:3px;flex:none">${parts.slice(0, 4).map(p => icon(p, 34)).join('')}</div>
-        <div class="info"><b>${esc(s.name)}</b><small>${esc(s.kind)}${s.note ? ' · ' + esc(s.note) : ''}</small></div>
-        <div class="stepper${q ? ' on' : ''}" aria-label="Quantity owned"><button data-a="setq-" data-v="${s.key}" aria-label="One fewer">−</button><span class="num">${q}</span><button data-a="setq+" data-v="${s.key}" aria-label="One more">+</button></div></div>`; }).join('') || '<div class="empty">No sets match.</div>'}</div></div>`;
+        <div class="info"><b>${esc(s.name).replace(/(\d)-(\d)/g, '$1&#8209;$2')}</b><small><span class="mcode">${esc(s.code)} · </span>${s.brand ? '<span class="tag" style="margin-right:4px">Hasbro</span>' : ''}${esc(s.kind)}${s.note ? ' · ' + esc(s.note) : ''}</small></div>
+        <div class="stepper${q ? ' on' : ''}" aria-label="Quantity owned"><button data-a="setq-" data-v="${s.key}" aria-label="One fewer">−</button><span class="num">${q}</span><button data-a="setq+" data-v="${s.key}" aria-label="One more">+</button></div></div>`; }).join('') || `<div class="empty">${ownedOnly ? 'You haven\'t added any sets here yet. Turn off Owned only to see them all.' : 'No sets match.'}</div>`}</div></div>`;
 }
 function vParts() {
   const cats = [['blade', 'Blades'], ['assist', 'Assist Blades'], ['ratchet', 'Ratchets'], ['bit', 'Bits']];
@@ -855,7 +1001,7 @@ function vParts() {
   if (ownedOnly) list = list.filter(p => S.counts[p.id]);
   list.sort((a, b) => (S.counts[b.id] ? 1 : 0) - (S.counts[a.id] ? 1 : 0) || dn(a).localeCompare(dn(b), undefined, {numeric: true}));
   return `<div class="row" style="justify-content:space-between"><div class="seg" role="group" style="overflow-x:auto;max-width:100%">${cats.map(([k, l]) => `<button data-a="pcat" data-v="${k}" aria-pressed="${partCat === k}">${l}</button>`).join('')}</div>
-     <div class="row"><label class="row" style="gap:6px;font-size:.9rem"><input type="checkbox" id="ownedonly" data-ch="ownedonly"${ownedOnly ? ' checked' : ''}> Owned only</label><button class="btn sm" data-a="bulkphotos">Import photos</button>${Object.keys(S.photos).length ? `<button class="btn sm" data-a="cleanphotos">Remove white backgrounds</button>` : ''}<button class="btn sm" data-a="addpart">${I.plus}Custom part</button></div></div>
+     <div class="row"><button class="btn sm" data-a="bulkphotos">Import photos</button>${Object.keys(S.photos).length ? `<button class="btn sm" data-a="cleanphotos">Remove white backgrounds</button>` : ''}<button class="btn sm" data-a="addpart">${I.plus}Custom part</button></div></div>
      ${partCat === 'blade' ? `<div class="legend"><span><i style="background:var(--atk)"></i>Attack</span><span><i style="background:var(--def)"></i>Defence</span><span><i style="background:var(--sta)"></i>Stamina</span><span><i style="background:var(--bal)"></i>Balance</span><span><i style="background:var(--unk)"></i>Type not set</span></div>` : ''}
      ${list.length ? `<div class="pgrid">${list.map(p => `<button class="ptile${S.counts[p.id] ? '' : ' off'}" data-a="partdetail" data-v="${p.id}">${S.counts[p.id] ? `<span class="cnt">${S.counts[p.id]}</span>` : ''}${icon(p.id)}<span class="nm">${esc(dn(p))}</span>${tags(p)}</button>`).join('')}</div>`
        : `<div class="empty"><h3>Nothing owned here yet</h3>Add sets you've bought, or tap any part to add it as a loose part.</div>`}`;
@@ -878,6 +1024,7 @@ function partDetail(pid) {
     <div class="row" style="justify-content:space-between"><div><b>Owned: <span class="num">${S.counts[pid] || 0}</span></b><div class="muted" style="font-size:.85rem">${Math.max(0, fromSets)} from sets · ${S.coll.extra[pid] || 0} loose</div></div>
       <div class="stepper on"><button data-a="extra-" data-v="${pid}" aria-label="Remove one loose">−</button><span class="num">${S.coll.extra[pid] || 0}</span><button data-a="extra+" data-v="${pid}" aria-label="Add one loose">+</button></div></div>
     <div class="row"><button class="btn" data-a="photo" data-v="${pid}">${S.photos[pid] ? 'Replace photo' : 'Add your own photo'}</button>${S.photos[pid] ? `<button class="btn ghost danger" data-a="delphoto" data-v="${pid}">Remove photo</button>` : ''}${p.custom ? `<button class="btn ghost danger" data-a="delpart" data-v="${pid}">Delete custom part</button>` : ''}</div>
+    ${STAT_KEYS[p.cat] ? `<div class="pstat"><div class="row" style="justify-content:space-between"><div class="eyebrow">Stats</div><span class="srcchip ${partStats(pid).src}">${partStats(pid).src === 'box' ? 'From the box' : partStats(pid).src === 'yours' ? 'Your numbers' : 'Estimated'}</span></div>${STAT_KEYS[p.cat].map(k => bar(k, partStats(pid).v[k] ?? 0)).join('')}<div class="row" style="justify-content:flex-end"><button class="btn sm ghost" data-a="editstats" data-v="${pid}">Enter box stats</button></div></div>` : ''}
     ${dbLink(p)}
     ${inSets.length ? `<div><div class="eyebrow" style="margin-bottom:6px">Comes in</div><div class="row" style="gap:6px">${inSets.map(s => `<span class="chip">${esc(s.code)} ${esc(s.name)}</span>`).join('')}</div></div>` : ''}`);
 }
@@ -1013,7 +1160,7 @@ let insMode = 'casual', insPlayer = null, insShowAll = false;
 function finishColors() { return {spin: 'var(--sta)', burst: 'var(--bal)', over: 'var(--def)', xtreme: 'var(--atk)', penalty: 'var(--unk)'}; }
 function rivalPair() {
   const r = S.settings.rival || ['', ''];
-  let a = player(r[0]) ? r[0] : (player(S.settings.me) ? S.settings.me : S.players[0]?.id || '');
+  let a = S.settings.personalOnly && player(S.settings.me) ? S.settings.me : player(r[0]) ? r[0] : (player(S.settings.me) ? S.settings.me : S.players[0]?.id || '');
   let b = player(r[1]) && r[1] !== a ? r[1] : '';
   if (!b && a) { const cnt = {}; S.matches.forEach(m => { const i = m.p.indexOf(a); if (i >= 0) cnt[m.p[1 - i]] = (cnt[m.p[1 - i]] || 0) + 1; }); b = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0]?.[0] || S.players.find(p => p.id !== a)?.id || ''; }
   return [a, b];
@@ -1035,7 +1182,7 @@ function vRivalry() {
   const total = wa + wb;
   return `<div class="card rival">
     <div class="row" style="justify-content:space-between"><h3>Rivalry</h3><span class="muted" style="font-size:.82rem">All matches, casual + competitive</span></div>
-    <div class="rv-pick"><select id="rivalA" data-ch="rivalA" aria-label="First player">${opts(a)}</select><span class="muted">vs</span><select id="rivalB" data-ch="rivalB" aria-label="Second player">${opts(b)}</select></div>
+    <div class="rv-pick"><select id="rivalA" data-ch="rivalA" aria-label="First player"${S.settings.personalOnly && player(S.settings.me) ? ' disabled' : ''}>${opts(a)}</select><span class="muted">vs</span><select id="rivalB" data-ch="rivalB" aria-label="Second player">${opts(b)}</select></div>
     ${total ? `<div class="rv-score"><div class="rv-n" style="color:var(--p1)">${esc(pname(a))}</div><div class="rv-num num"><b style="color:var(--p1)">${wa}</b><span class="muted">–</span><b style="color:var(--p2)">${wb}</b></div><div class="rv-n" style="color:var(--p2);text-align:right">${esc(pname(b))}</div></div>
       <div class="fbar"><i style="width:${wa / total * 100}%;background:var(--p1)"></i><i style="width:${wb / total * 100}%;background:var(--p2)"></i></div>
       <div class="row" style="justify-content:space-between;gap:8px"><span class="muted" style="font-size:.84rem">Casual ${split('casual')} · Competitive ${split('competitive')}</span>
@@ -1046,6 +1193,8 @@ function vRivalry() {
   </div>`;
 }
 function vInsights() {
+  const personal = S.settings.personalOnly && player(S.settings.me);
+  if (personal) insPlayer = S.settings.me;
   if (insPlayer === null) insPlayer = player(S.settings.me) ? S.settings.me : '';
   const ms = S.matches.filter(m => m.mode === insMode && (!insPlayer || m.p.includes(insPlayer)));
   const pRows = {}, fin = {spin: 0, burst: 0, over: 0, xtreme: 0, penalty: 0}, cRows = {}, partRows = {};
@@ -1076,7 +1225,7 @@ function vInsights() {
   const partBy = cat => Object.values(partRows).filter(x => P[x.pid]?.cat === cat && x.w + x.l >= 2).sort((a, b) => pct(b.w, b.w + b.l) - pct(a.w, a.w + a.l) || (b.w + b.l) - (a.w + a.l)).slice(0, 6);
   const partTable = (cat, title) => { const rows = partBy(cat); return `<div class="card"><h3 style="margin-bottom:8px">${title}</h3>${rows.length ? rows.map(x => `<div class="row" style="flex-wrap:nowrap;padding:5px 0">${icon(x.pid, 30)}<span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pn(x.pid))}</span><span class="muted num" style="font-size:.82rem">${x.w}–${x.l}</span><b class="num" style="width:44px;text-align:right">${pct(x.w, x.w + x.l)}%</b></div>`).join('') : '<div class="muted" style="font-size:.88rem">Needs at least 2 tagged rounds.</div>'}</div>`; };
   return `<div class="head"><div><div class="eyebrow">Insights</div><h1>${insMode === 'competitive' ? 'Competitive' : 'Casual'} stats</h1></div>
-     <div class="row">${player(S.settings.me) ? `<div class="seg" role="group" aria-label="Whose stats"><button data-a="insme" data-v="${S.settings.me}" aria-pressed="${insPlayer === S.settings.me}">Just me</button><button data-a="insme" data-v="" aria-pressed="${!insPlayer}">Everyone</button></div>` : ''}<select id="insp" data-ch="insplayer" aria-label="Player"><option value="">All players</option>${S.players.map(p => `<option value="${p.id}"${p.id === insPlayer ? ' selected' : ''}>${esc(p.name)}${p.id === S.settings.me ? ' (you)' : ''}</option>`).join('')}</select>
+     <div class="row">${personal ? `<span class="chip on">${esc(pname(S.settings.me))}'s stats</span>` : player(S.settings.me) ? `<div class="seg" role="group" aria-label="Whose stats"><button data-a="insme" data-v="${S.settings.me}" aria-pressed="${insPlayer === S.settings.me}">Personal</button><button data-a="insme" data-v="" aria-pressed="${!insPlayer}">Everyone</button></div>` : ''}${personal ? '' : `<select id="insp" data-ch="insplayer" aria-label="Player"><option value="">All players</option>${S.players.map(p => `<option value="${p.id}"${p.id === insPlayer ? ' selected' : ''}>${esc(p.name)}${p.id === S.settings.me ? ' (you)' : ''}</option>`).join('')}</select>`}
      <div class="seg mode" role="group"><button data-a="insmode" data-v="casual" aria-pressed="${insMode === 'casual'}">Casual</button><button data-a="insmode" data-v="competitive" aria-pressed="${insMode === 'competitive'}">Competitive</button></div></div></div>
    ${ms.length ? `
    <div class="grid g4">${tiles.map(([k, v]) => `<div class="card tile"><span class="v num">${v}</span><span class="k">${k}</span></div>`).join('')}</div>
@@ -1084,9 +1233,9 @@ function vInsights() {
    <div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="row" style="justify-content:space-between"><h3>How points were scored</h3><span class="muted num">${finTotal} pts</span></div>
      <div class="fbar">${Object.entries(fin).filter(([, v]) => v).map(([k, v]) => `<i style="width:${v / finTotal * 100}%;background:${fc[k]}" title="${k} ${v}"></i>`).join('')}</div>
      <div class="legend">${Object.entries(fin).map(([k, v]) => `<span><i style="background:${fc[k]}"></i>${k[0].toUpperCase() + k.slice(1)} <b class="num">${v}</b> <span class="num">(${pct(v, finTotal)}%)</span></span>`).join('')}</div></div>
-   <div class="card"><h3 style="margin-bottom:6px">Players</h3><div class="tbl-wrap"><table><thead><tr><th>Player</th><th class="r">Played</th><th class="r">W–L</th><th>Win rate</th><th class="r">Pts for</th><th class="r">Pts against</th><th class="r">Xtremes</th></tr></thead><tbody>
+   ${personal ? '' : `<div class="card"><h3 style="margin-bottom:6px">Players</h3><div class="tbl-wrap"><table><thead><tr><th>Player</th><th class="r">Played</th><th class="r">W–L</th><th>Win rate</th><th class="r">Pts for</th><th class="r">Pts against</th><th class="r">Xtremes</th></tr></thead><tbody>
      ${Object.values(pRows).sort((a, b) => pct(b.w, b.m) - pct(a.w, a.m) || b.m - a.m).map(o => `<tr><td><b>${esc(o.name)}</b></td><td class="r">${o.m}</td><td class="r">${o.w}–${o.m - o.w}</td><td><div class="barcell"><div class="b"><i style="width:${pct(o.w, o.m)}%"></i></div><span class="num">${pct(o.w, o.m)}%</span></div></td><td class="r">${o.pf}</td><td class="r">${o.pa}</td><td class="r">${o.x}</td></tr>`).join('')}
-   </tbody></table></div></div>
+   </tbody></table></div></div>`}
    <div class="card"><h3 style="margin-bottom:6px">Combos${insPlayer ? ' used by ' + esc(pname(insPlayer)) : ''}</h3>${combosSorted.length ? `<div class="tbl-wrap"><table><thead><tr><th>Combo</th><th class="r">Rounds</th><th class="r">Won</th><th>Round win rate</th><th>Best finish</th></tr></thead><tbody>
      ${combosSorted.map(c => { const best = Object.entries(c.fin).sort((a, b) => b[1] - a[1])[0]; return `<tr><td><b>${esc(c.label)}</b></td><td class="r">${c.w + c.l}</td><td class="r">${c.w}</td><td><div class="barcell"><div class="b"><i style="width:${pct(c.w, c.w + c.l)}%"></i></div><span class="num">${pct(c.w, c.w + c.l)}%</span></div></td><td>${best ? `<span class="chip"><i class="tdot" style="background:${fc[best[0]]}"></i>${best[0]} ×${best[1]}</span>` : '—'}</td></tr>`; }).join('')}
    </tbody></table></div>` : '<div class="muted">Tag which bey each player used in the scorer to see combo stats.</div>'}</div>
@@ -1289,6 +1438,10 @@ function vPrefs() {
        : `<div class="muted">Discord sign-in isn't set up for this copy of the app yet, so everything is saved on this device only. See the README to connect Supabase.</div>`}
      <div class="row"><button class="btn" data-a="exportdata">${I.save}Export backup</button><button class="btn" data-a="importdata">Import backup</button></div>
      <div class="muted" style="font-size:.84rem">App version ${APP_VERSION}. A backup is a JSON file of all your data. Importing adds to what's here; items with the same ID are replaced. Use it to bring data over from the earlier version of this app.</div></div>
+   <div class="card" style="display:flex;flex-direction:column;gap:12px"><h3>Insights &amp; Build</h3>
+     <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Only show my stats</b><div class="muted" style="font-size:.86rem">${player(s.me) ? 'Insights shows only your matches and hides everyone else\'s.' : 'Pick which player you are above first.'}</div></div><label class="row" style="gap:6px"><input type="checkbox" id="personalOnly" data-ch="tog" data-v="personalOnly"${s.personalOnly ? ' checked' : ''}${player(s.me) ? '' : ' disabled'}> On</label></div>
+     <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Show the randomiser</b><div class="muted" style="font-size:.86rem">The slot-machine button on the Build screen.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="showRandom" data-ch="tog" data-v="showRandom"${s.showRandom !== false ? ' checked' : ''}> On</label></div>
+     <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Randomise from every part</b><div class="muted" style="font-size:.86rem">Off: only parts you own. On: any part in the game.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="randomAny" data-ch="tog" data-v="randomAny"${s.randomAny ? ' checked' : ''}> On</label></div></div>
    <div class="card" style="display:flex;flex-direction:column;gap:10px"><h3>Recording</h3>
      <div class="row" style="justify-content:space-between"><div><b>Start recording on 3-2-1</b><div class="muted" style="font-size:.86rem">If the camera is open, the countdown starts recording and the match result stops it.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="autorec" data-ch="autorec"${s.recOn321 ? ' checked' : ''}> On</label></div></div>`;
 }
@@ -1334,6 +1487,18 @@ document.addEventListener('click', async e => {
     // collection
     case 'ctab': collTab = v; render(); break;
     case 'setline': setLine = v; render(); break;
+    case 'owned': ownedOnly = !ownedOnly; render(); break;
+    case 'combostats': comboSheet(combo(v)); break;
+    case 'draftstats': comboSheet({...draft, id: draft.editing || ''}, 'Ratings'); break;
+    case 'editstats': statsEditor(v); break;
+    case 'savestats': { const p = P[v], vals = {}; for (const k of STAT_KEYS[p.cat]) { const x = $('#st_' + k).value; if (x !== '') vals[k] = Math.max(0, Math.min(100, +x)); } Store.put('pstat_' + slug(v), {kind: 'pstat', pid: v, vals}); closeSheet(); toast('Box stats saved'); render(); break; }
+    case 'clearstats': Store.del('pstat_' + slug(v)); closeSheet(); toast('Back to the estimate'); render(); break;
+    case 'randomise': openRandomiser(); break;
+    case 'rz-close': $('#layer').innerHTML = ''; RZ = null; break;
+    case 'rz-spin': spinAll(); break;
+    case 'rz-lock': { if (!RZ?.cur[v] && v !== 'assist') return toast('Spin first, then hold the parts you like'); RZ.lock[v] = !RZ.lock[v]; el.setAttribute('aria-pressed', RZ.lock[v]); el.textContent = RZ.lock[v] ? 'Held' : 'Hold'; break; }
+    case 'rz-rate': if (RZ?.cur.blade) { const c = {...RZ.cur}; comboSheet(c, 'Ratings'); } break;
+    case 'rz-save': if (RZ?.cur.blade) { const id = uid(); Store.put('combo_' + id, {kind: 'combo', id, blade: RZ.cur.blade, assist: RZ.cur.assist, ratchet: RZ.cur.ratchet, bit: RZ.cur.bit, created: Date.now()}); toast('Saved: ' + comboLabel(RZ.cur)); $('#rzSave').disabled = true; render(); } break;
     case 'naming': saveSettings({naming: v}); render(); break;
     case 'setq+': case 'setq-': { const c = {sets: {...S.coll.sets}, extra: {...S.coll.extra}}; c.sets[v] = Math.max(0, (c.sets[v] || 0) + (a === 'setq+' ? 1 : -1)); if (!c.sets[v]) delete c.sets[v]; saveColl(c); render(); break; }
     case 'pcat': partCat = v; render(); break;
@@ -1406,7 +1571,7 @@ document.addEventListener('click', async e => {
     case 'cam-min': Cam.min = !Cam.min; Cam.paint(); break;
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) { menuOpen = false; renderNav(); } if (e.key === 'Escape' && $('#layer').innerHTML) { if ($('#pv')) closeViewer(); else closeSheet(); } if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) { menuOpen = false; renderNav(); } if (e.key === 'Escape' && $('#layer').innerHTML) { if ($('#pv')) closeViewer(); else { RZ = null; closeSheet(); } } if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); } });
 document.addEventListener('change', e => {
   const el = e.target, ch = el.dataset.ch; if (!ch) return; const i = +el.dataset.i;
   if (ch === 'player') { if (el.value === '__new') { el.value = M.p[i] || ''; return playerForm(null, i); } if (M.rounds.length && !M.done) { el.value = M.p[i]; return toast('Players are locked once scoring starts'); } M.p[i] = el.value; persistLive(); render(); }
@@ -1419,6 +1584,8 @@ document.addEventListener('change', e => {
   if (ch === 'insplayer') { insPlayer = el.value; insShowAll = false; render(); }
   if (ch === 'sound') saveSettings({sound: el.checked});
   if (ch === 'autorec') saveSettings({recOn321: el.checked});
+  if (ch === 'tog') { saveSettings({[el.dataset.v]: el.checked}); if (el.dataset.v === 'personalOnly') { insPlayer = null; } render(); }
+  if (ch === 'stat') { /* handled on save */ }
   if (ch === 'me') { saveSettings({me: el.value}); if (M && !M.rounds.length && el.value) { M.p[0] = el.value; if (M.p[1] === el.value) M.p[1] = ''; persistLive(); } render(); }
   if (ch === 'swapsides') { saveSettings({swapSides: el.checked}); render(); }
   if (ch === 'rivalA' || ch === 'rivalB') { const r = [...rivalPair()]; r[ch === 'rivalA' ? 0 : 1] = el.value; saveSettings({rival: r}); render(); }
@@ -1453,15 +1620,23 @@ window.addEventListener('hashchange', () => { routeFromHash(); render(); window.
 /* ================= GESTURES ================= */
 let sw = null;
 const viewIndex = () => VIEWS.findIndex(v => v[0] === view);
+const VIEW_FN = () => ({score: vScore, build: vBuild, collection: vCollection, insights: vInsights, tournaments: vTourneys, players: vPlayers, clips: vClips, prefs: vPrefs});
 document.addEventListener('touchstart', e => {
   sw = null;
   if (e.touches.length !== 1 || menuOpen || $('#layer').innerHTML) return;
-  if (!e.target.closest('#view')) return; // the header never takes part in a swipe
+  if (e.target.closest('#nav,#layer,#camdock')) return; // the header never takes part in a swipe
   const t = e.touches[0];
   if (t.clientX < 18 || t.clientX > innerWidth - 18) return; // leave the browser's edge-swipe alone
-  if (e.target.closest('input,select,textarea,video,.camdock,.tbl-wrap,.seg,.combochips,.noswipe')) return;
-  sw = {x: t.clientX, y: t.clientY, t: Date.now(), lock: null, dx: 0, el: $('#view > .wrap')};
+  if (e.target.closest('input,select,textarea,video,.tbl-wrap,.seg,.combochips,.noswipe')) return;
+  sw = {x: t.clientX, y: t.clientY, t: Date.now(), lock: null, dx: 0, el: $('#view > .wrap'), ghost: null, dir: 0};
 }, {passive: true});
+function makeGhost(dir) {
+  const j = viewIndex() + dir; if (j < 0 || j >= VIEWS.length) return null;
+  const g = document.createElement('div'); g.className = 'swipe-next'; g.setAttribute('aria-hidden', 'true');
+  g.style.top = (window.scrollY + 14) + 'px';
+  try { g.innerHTML = `<div class="wrap">${VIEW_FN()[VIEWS[j][0]]()}</div>`; } catch { g.innerHTML = '<div class="wrap"></div>'; }
+  $('#view').appendChild(g); return g;
+}
 document.addEventListener('touchmove', e => {
   if (e.touches.length > 1) { e.preventDefault(); return; } // no pinch zoom
   if (!sw || !sw.el) return;
@@ -1472,29 +1647,30 @@ document.addEventListener('touchmove', e => {
     if (sw.lock === 'y') { sw = null; return; }
   }
   e.preventDefault();
-  const i = viewIndex(), edge = (dx > 0 && i === 0) || (dx < 0 && i === VIEWS.length - 1);
-  const d = edge ? dx * .2 : dx;
+  const dir = dx < 0 ? 1 : -1, W = $('#view').clientWidth;
+  if (sw.dir !== dir) { sw.ghost?.remove(); sw.ghost = makeGhost(dir); sw.dir = dir; }
+  const d = sw.ghost ? dx : dx * .2; // rubber band at the first and last screen
   sw.dx = dx;
-  sw.el.style.transition = 'none';
-  sw.el.style.transform = `translate3d(${d}px,0,0)`;
-  sw.el.style.opacity = String(1 - Math.min(Math.abs(d) / innerWidth, .6) * .6);
+  sw.el.style.transition = 'none'; sw.el.style.transform = `translate3d(${d}px,0,0)`;
+  if (sw.ghost) { sw.ghost.style.transition = 'none'; sw.ghost.style.transform = `translate3d(${d + dir * W}px,0,0)`; }
 }, {passive: false});
 function endSwipe() {
   if (!sw) return; const s = sw; sw = null;
   if (s.lock !== 'x' || !s.el) return;
-  const i = viewIndex(), j = i + (s.dx < 0 ? 1 : -1), fast = Math.abs(s.dx) / Math.max(Date.now() - s.t, 1) > .45;
-  if (j >= 0 && j < VIEWS.length && (Math.abs(s.dx) > innerWidth * .25 || (fast && Math.abs(s.dx) > 40))) {
-    s.el.style.transition = 'transform .17s cubic-bezier(.4,0,1,1), opacity .17s';
-    s.el.style.transform = `translate3d(${s.dx < 0 ? -innerWidth : innerWidth}px,0,0)`; s.el.style.opacity = '0';
-    setTimeout(() => go(VIEWS[j][0], s.dx < 0 ? 1 : -1), 160);
+  const W = $('#view').clientWidth, dir = s.dir, fast = Math.abs(s.dx) / Math.max(Date.now() - s.t, 1) > .4;
+  const ease = 'transform .26s cubic-bezier(.22,.8,.24,1)';
+  if (s.ghost && (Math.abs(s.dx) > W * .22 || (fast && Math.abs(s.dx) > 35))) {
+    s.el.style.transition = ease; s.ghost.style.transition = ease;
+    s.el.style.transform = `translate3d(${-dir * W}px,0,0)`; s.ghost.style.transform = 'translate3d(0,0,0)';
+    const target = VIEWS[viewIndex() + dir][0];
+    setTimeout(() => go(target, 0), 250);
   } else {
-    s.el.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s';
-    s.el.style.transform = ''; s.el.style.opacity = '';
+    s.el.style.transition = ease; s.el.style.transform = '';
+    if (s.ghost) { s.ghost.style.transition = ease; s.ghost.style.transform = `translate3d(${dir * W}px,0,0)`; const g = s.ghost; setTimeout(() => g.remove(), 280); }
   }
 }
 document.addEventListener('touchend', endSwipe, {passive: true});
 document.addEventListener('touchcancel', endSwipe, {passive: true});
-// no pinch zoom (iOS ignores the viewport setting, so block the gesture itself)
 document.addEventListener('gesturestart', e => e.preventDefault());
 
 /* ================= BOOT ================= */
