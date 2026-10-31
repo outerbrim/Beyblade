@@ -294,7 +294,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .avbtn img{width:100%;height:100%;object-fit:cover}
 .topbar .btn.discord{flex:none}
 .menu-back{position:fixed;inset:0;z-index:29;background:rgba(10,14,22,.25)}
-.menu{position:absolute;left:max(12px,env(safe-area-inset-left,0px));top:calc(100% + 6px);z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);padding:6px;width:min(280px,calc(100vw - 24px));display:flex;flex-direction:column;max-height:calc(100vh - 90px);overflow-y:auto}
+.menu{position:absolute;right:max(12px,env(safe-area-inset-right,0px));top:calc(100% + 6px);z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);padding:6px;width:min(280px,calc(100vw - 24px));display:flex;flex-direction:column;max-height:calc(100vh - 90px);overflow-y:auto}
 .menuitem{display:flex;align-items:center;gap:14px;padding:12px;border:0;background:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:1rem;color:var(--ink);text-align:left;font-family:var(--body)}
 .menuitem svg{width:22px;height:22px;color:var(--muted)}
 .menuitem:hover{background:var(--surface-2)}
@@ -415,3 +415,47 @@ input[type=range]{accent-color:var(--accent);height:28px}
   .side .pt{min-height:64px}
   .side .faultbtn{grid-area:fault;padding:3px 10px}
 }
+
+/* ===== v4 ===== */
+/* feel like an app: no scrollbars, no rubber-band or pull-to-refresh */
+html,body{scrollbar-width:none;overscroll-behavior:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{width:0;height:0;display:none}
+*{scrollbar-width:none}
+body{overflow-x:hidden}
+main{overflow-x:clip}
+#view>.wrap{will-change:transform}
+.wrap.in-next{animation:inNext .3s cubic-bezier(.2,.8,.2,1)}
+.wrap.in-prev{animation:inPrev .3s cubic-bezier(.2,.8,.2,1)}
+@keyframes inNext{from{transform:translate3d(38%,0,0);opacity:0}}
+@keyframes inPrev{from{transform:translate3d(-38%,0,0);opacity:0}}
+/* header: account on the left, menu on the right */
+.topbar>.btn.discord{order:0}
+/* swap sides */
+.arena.swap .side.s0,.beygrid.swap .beycol.s0,.qs.swap .qs-row.s0{order:2}
+/* quick sync */
+.syncrow{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:-4px}
+.syncrow .btn svg{width:16px;height:16px}
+.syncrow .muted{font-size:.74rem}
+/* match list that fits a phone, with delete always visible */
+.mlist{display:flex;flex-direction:column}
+.mrow{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line)}
+.mrow:first-child{border-top:0}
+.minfo{flex:1;min-width:0}
+.mtop{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.mscore{font-family:var(--display);font-weight:700;font-size:1.05rem}
+.msub{font-size:.8rem}
+/* rivalry */
+.rival{display:flex;flex-direction:column;gap:10px}
+.rv-pick{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.rv-pick select{width:100%;min-width:0}
+.rv-score{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}
+.rv-n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv-num{font-family:var(--display);font-size:2.4rem;font-weight:700;display:flex;gap:8px;align-items:baseline}
+.rv-last{display:inline-flex;gap:4px}
+.rv-last i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.rv-last i.a{background:var(--p1)} .rv-last i.b{background:var(--p2)}
+/* clip viewer */
+.vbig{left:50%;top:50%;transform:translate(-50%,-50%);margin:0}
+.vbub{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:rgba(0,0,0,.65);color:#fff;padding:4px 10px;border-radius:999px;font-size:.85rem}
+.vhint{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);font-size:.72rem;color:rgba(255,255,255,.55);white-space:nowrap;pointer-events:none}
+#vscrub{height:34px}

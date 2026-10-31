@@ -1,4 +1,4 @@
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -217,7 +217,7 @@ const TYPE_LABEL = {A: 'Attack', D: 'Defence', S: 'Stamina', B: 'Balance'};
 function tags(p) {
   const line = p.cat === 'blade' || p.cat === 'assist' ? (p.line || (p.cat === 'assist' ? 'CX' : '')) : '';
   const code = p.cat !== 'blade' && p.cat !== 'ratchet' ? p.code : '';
-  return `<span class="tags">${line ? `<span class="tag">${esc(line)}</span>` : ''}${code ? `<span class="tag">${esc(code)}</span>` : ''}${p.type ? `<span class="tag ty t-${p.type}">${TYPE_LABEL[p.type]}</span>` : ''}</span>`;
+  return `<span class="tags">${p.base ? '<span class="tag">Replica</span>' : ''}${line && !p.base ? `<span class="tag">${esc(line)}</span>` : ''}${code ? `<span class="tag">${esc(code)}</span>` : ''}${p.type ? `<span class="tag ty t-${p.type}">${TYPE_LABEL[p.type]}</span>` : ''}</span>`;
 }
 // Blades first added under their Hasbro name: same id, Takara name kept for the name toggle
 const HB_FIRST = {'Gill Shark':'Shark Gill','Tackle Goat':'Goat Tackle','Knife Shinobi':'Shinobi Knife','Savage Bear':'Bear Scratch','Nether Incendio':'Hells Nether','Valor Bison':'Bison Burrow','Roar Tyranno':'Tyranno Roar'};
@@ -285,12 +285,13 @@ function partSVG(p) {
 }
 function icon(pid, sz) {
   const p = P[pid]; if (!p) return `<div class="pi"${sz ? ` style="--sz:${sz}px"` : ''}></div>`;
-  const ph = S.photos[pid];
-  return `<div class="pi t-${p.type || 'U'}"${sz ? ` style="--sz:${sz}px"` : ''}>${ph ? `<img src="${esc(ph)}" alt="">` : partSVG(p)}</div>`;
+  const bp = p.base ? P[p.base] : null;
+  const ph = S.photos[pid] || (bp && S.photos[bp.id]);
+  return `<div class="pi t-${p.type || 'U'}"${sz ? ` style="--sz:${sz}px"` : ''}>${ph ? `<img src="${esc(ph)}" alt="">` : partSVG(bp || p)}</div>`;
 }
 
 /* ================= STATE + SYNC ================= */
-const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', autoRec: true, camFps: 60};
+const DEFAULT_SETTINGS = {pointsToWin: 4, faultLimit: 2, sound: true, mode: 'casual', lastP: ['', ''], naming: 'hasbro', camFps: 60, recOn321: false, me: '', swapSides: false, rival: ['', '']};
 let S = {};
 const CFG = window.BEYX_CONFIG || {};
 const Store = {
@@ -365,7 +366,7 @@ function derive() {
        combos: [], decks: [], players: [], matches: [], tourneys: [], clips: []};
   for (const [k, v] of Object.entries(d)) {
     if (!v || !v.kind) continue;
-    if (v.kind === 'part' && !P[v.pid]) reg(v.cat, v.key, v.name, v.type || '', {code: v.code || v.name, custom: true, line: 'Custom'});
+    if (v.kind === 'part' && !P[v.pid]) reg(v.cat, v.key, v.name, v.type || (v.base && P[v.base] ? P[v.base].type0 : '') || '', {code: v.code || v.name, custom: true, line: 'Custom', base: v.base || ''});
     if (v.kind === 'photo') S.photos[v.pid] = v.src;
     if (v.kind === 'combo') S.combos.push(v);
     if (v.kind === 'deck') S.decks.push(v);
@@ -445,6 +446,7 @@ const I = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>',
+  sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
 };
 
@@ -456,20 +458,22 @@ const VIEWS = [
 let view = 'score';
 function routeFromHash() { const h = location.hash.slice(1); view = VIEWS.some(v => v[0] === h) ? h : 'score'; }
 let menuOpen = false, slideDir = 0;
+const sideOrder = () => S.settings.swapSides ? [1, 0] : [0, 1];
 function liveScore() {
   if (!M || (!M.p[0] && !M.p[1] && !M.rounds.length)) return '';
   const st = replay(); const n = i => esc((M.p[i] ? pname(M.p[i]) : 'P' + (i + 1)).split(' ')[0]);
-  return `<button class="livepill" data-a="nav" data-v="score" aria-label="Current match score">${M.done ? '<span class="lp-done">Final</span>' : Cam.recording ? '<i class="lp-rec" aria-label="Recording"></i>' : ''}<span class="lp-n" style="color:var(--p1)">${n(0)}</span><b class="num">${st.score[0]}</b><span class="muted">–</span><b class="num">${st.score[1]}</b><span class="lp-n" style="color:var(--p2)">${n(1)}</span></button>`;
+  const [a, b] = sideOrder();
+  return `<button class="livepill" data-a="nav" data-v="score" aria-label="Current match score">${M.done ? '<span class="lp-done">Final</span>' : Cam.recording ? '<i class="lp-rec" aria-label="Recording"></i>' : ''}<span class="lp-n" style="color:var(--p${a + 1})">${n(a)}</span><b class="num">${st.score[a]}</b><span class="muted">–</span><b class="num">${st.score[b]}</b><span class="lp-n" style="color:var(--p${b + 1})">${n(b)}</span></button>`;
 }
 const VIEW_NAME = {tournaments: 'Tournaments', prefs: 'Settings'};
 function renderNav() {
   const cur = VIEWS.find(v => v[0] === view);
   $('#nav').innerHTML = `<header class="topbar">
-    <button class="iconbtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
+    ${acctChip()}
     <div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div>
     ${liveScore()}
     <button class="iconbtn" data-a="nav" data-v="prefs" aria-label="Settings"${view === 'prefs' ? ' aria-current="page"' : ''}>${I.gear}</button>
-    ${acctChip()}
+    <button class="iconbtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
   </header>
   ${menuOpen ? `<div class="menu-back" data-a="menu-close"></div><nav class="menu" aria-label="Sections">${VIEWS.map(([k, l, ic]) => `<button class="menuitem" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}<div class="menu-hint">Swipe left or right on any screen to move to the next one.</div></nav>` : ''}`;
 }
@@ -501,7 +505,9 @@ let M = LS.get('bxt-live', null);
 function freshMatch() {
   const s = S.settings;
   const last = s.lastP || ['', ''];
-  M = {id: uid(), mode: s.mode || 'casual', p: [...last].map(id => player(id) ? id : ''), deck: ['', ''], combo: ['', ''], deckIdx: [0, 0],
+  let pp = [...last].map(id => player(id) ? id : '');
+  if (s.me && player(s.me)) { const opp = pp.find(id => id && id !== s.me) || ''; pp = [s.me, opp]; }
+  M = {id: uid(), mode: s.mode || 'casual', p: pp, deck: ['', ''], combo: ['', ''], deckIdx: [0, 0],
        rounds: [], tid: '', started: Date.now(), done: false, ptw: s.pointsToWin, fl: s.faultLimit};
   persistLive();
 }
@@ -574,8 +580,9 @@ function vScore() {
      </div></div>
    <div class="target">First to <b class="num">${M.ptw}</b> · <span class="num">${M.fl}</span> launch errors a round${M.done ? ' · <b style="color:var(--good)">Match saved</b>' : ''}</div>
    ${tsel}${needDeck}${needCombo}
-   <div class="arena">${side(0)}${side(1)}</div>
-   <div class="card beys"><div class="eyebrow">${comp ? 'Decks' : 'Beys in play'}</div><div class="beygrid"><div class="beycol s0">${beyPick(0)}</div><div class="beycol s1">${beyPick(1)}</div></div></div>
+   <div class="arena${S.settings.swapSides ? ' swap' : ''}">${side(0)}${side(1)}</div>
+   <div class="card beys"><div class="eyebrow">${comp ? 'Decks' : 'Beys in play'}</div><div class="beygrid${S.settings.swapSides ? ' swap' : ''}"><div class="beycol s0">${beyPick(0)}</div><div class="beycol s1">${beyPick(1)}</div></div></div>
+   <div class="syncrow"><button class="btn sm ghost" data-a="syncnow" aria-label="Sync now">${I.sync}Sync</button><span class="muted">${esc(Store.status)}</span></div>
    ${log ? `<div class="card"><div class="eyebrow" style="margin-bottom:8px">Round log</div><div class="log">${log}</div></div>` : ''}`;
 }
 function score(i, type) {
@@ -615,7 +622,7 @@ function finishMatch(w, st) {
   Store.put('match_' + M.id, m);
   saveSettings({lastP: M.p});
   const recLive = Cam.recording;
-  if (recLive && S.settings.autoRec !== false) setTimeout(() => Cam.stop(), 1500);
+  if (recLive && S.settings.recOn321 === true) setTimeout(() => Cam.stop(), 1500);
   beep(1046, .12); setTimeout(() => beep(1318, .25), 140);
   const wr = recordWin(M.p[w], M.mode);
   const clips = S.clips.filter(c => c.matchId === M.id).length + (recLive ? 1 : 0);
@@ -639,7 +646,7 @@ function beep(f, d) {
   } catch {}
 }
 function countdown() {
-  if (Cam.stream && !Cam.recording && S.settings.autoRec !== false) Cam.start();
+  if (Cam.stream && !Cam.recording && S.settings.recOn321 === true) Cam.start();
   const steps = ['3', '2', '1', 'GO SHOOT!'];
   let k = 0;
   const show = () => {
@@ -730,7 +737,7 @@ const Cam = {
     this.paintQS();
   },
   paintQS() {
-    const q = $('#camqs'); if (!q || !M) return;
+    const q = $('#camqs'); if (!q || !M) return; q.classList.toggle('swap', !!S.settings.swapSides);
     const st = replay(); const off = M.done ? ' disabled' : '';
     q.innerHTML = [0, 1].map(i => `<div class="qs-row s${i}"><div class="qs-name"><span>${esc(M.p[i] ? pname(M.p[i]) : 'Player ' + (i + 1))}</span><b class="num">${st.score[i]}</b></div>
       <div class="qs-btns"><button class="pt" data-a="pt" data-i="${i}" data-v="spin"${off}><small>SPIN</small><b>+1</b></button><button class="pt" data-a="pt" data-i="${i}" data-v="burst"${off}><small>BURST</small><b>+2</b></button><button class="pt" data-a="pt" data-i="${i}" data-v="over"${off}><small>OVER</small><b>+2</b></button><button class="pt x" data-a="pt" data-i="${i}" data-v="xtreme"${off}><small>XTREME</small><b>+3</b></button><button class="faultbtn" data-a="fault" data-i="${i}"${off}>F: ${M.fl - st.faults[i]}</button></div></div>`).join('')
@@ -852,6 +859,15 @@ function vParts() {
      ${partCat === 'blade' ? `<div class="legend"><span><i style="background:var(--atk)"></i>Attack</span><span><i style="background:var(--def)"></i>Defence</span><span><i style="background:var(--sta)"></i>Stamina</span><span><i style="background:var(--bal)"></i>Balance</span><span><i style="background:var(--unk)"></i>Type not set</span></div>` : ''}
      ${list.length ? `<div class="pgrid">${list.map(p => `<button class="ptile${S.counts[p.id] ? '' : ' off'}" data-a="partdetail" data-v="${p.id}">${S.counts[p.id] ? `<span class="cnt">${S.counts[p.id]}</span>` : ''}${icon(p.id)}<span class="nm">${esc(dn(p))}</span>${tags(p)}</button>`).join('')}</div>`
        : `<div class="empty"><h3>Nothing owned here yet</h3>Add sets you've bought, or tap any part to add it as a loose part.</div>`}`;
+}
+function cpFields(cat) {
+  const offi = Object.values(P).filter(p => p.cat === cat && !p.custom).sort((a, b) => dn(a).localeCompare(dn(b), undefined, {numeric: true}));
+  const label = {blade: 'blade', assist: 'assist blade', ratchet: 'ratchet', bit: 'bit'}[cat];
+  return `<label class="f">Replica of (official ${label})<select id="cpbase" data-ch="cpbase"><option value="">None, it's a new design</option>${offi.map(p => `<option value="${p.id}">${esc(dn(p))}${p.code && p.cat !== 'ratchet' && p.cat !== 'blade' ? ' (' + esc(p.code) + ')' : ''}</option>`).join('')}</select></label>
+    <div class="muted" style="font-size:.82rem;margin-top:-8px">A replica uses the official part's photo, type and code, so combos read the same.</div>
+    <label class="f">Name<input type="text" id="cpname" placeholder="Name" autocomplete="off"></label>
+    ${cat === 'blade' ? `<label class="f">Type (if it's a new design)<select id="cptype"><option value="">Not set</option><option value="A">Attack</option><option value="D">Defence</option><option value="S">Stamina</option><option value="B">Balance</option></select></label>`
+      : `<label class="f">Code (if it's a new design)<input type="text" id="cpcode" placeholder="${cat === 'ratchet' ? 'e.g. 3-60' : 'e.g. LF'}" autocomplete="off"></label>`}`;
 }
 function partDetail(pid) {
   const p = P[pid]; const fromSets = (S.counts[pid] || 0) - (S.coll.extra[pid] || 0);
@@ -993,9 +1009,44 @@ async function handlePhoto(file) {
 }
 
 /* ================= INSIGHTS ================= */
-let insMode = 'casual', insPlayer = '';
+let insMode = 'casual', insPlayer = null, insShowAll = false;
 function finishColors() { return {spin: 'var(--sta)', burst: 'var(--bal)', over: 'var(--def)', xtreme: 'var(--atk)', penalty: 'var(--unk)'}; }
+function rivalPair() {
+  const r = S.settings.rival || ['', ''];
+  let a = player(r[0]) ? r[0] : (player(S.settings.me) ? S.settings.me : S.players[0]?.id || '');
+  let b = player(r[1]) && r[1] !== a ? r[1] : '';
+  if (!b && a) { const cnt = {}; S.matches.forEach(m => { const i = m.p.indexOf(a); if (i >= 0) cnt[m.p[1 - i]] = (cnt[m.p[1 - i]] || 0) + 1; }); b = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0]?.[0] || S.players.find(p => p.id !== a)?.id || ''; }
+  return [a, b];
+}
+function vRivalry() {
+  if (S.players.length < 2) return '';
+  const [a, b] = rivalPair();
+  const h2h = S.matches.filter(m => m.p.includes(a) && m.p.includes(b) && a !== b).sort((x, y) => x.date - y.date);
+  const won = (m, pid) => m.p[m.winner] === pid;
+  const wa = h2h.filter(m => won(m, a)).length, wb = h2h.length - wa;
+  const split = mode => { const x = h2h.filter(m => m.mode === mode); const w = x.filter(m => won(m, a)).length; return `${w}–${x.length - w}`; };
+  let streak = 0, who = '';
+  for (let k = h2h.length - 1; k >= 0; k--) { const w = h2h[k].p[h2h[k].winner]; if (!who) who = w; if (w === who) streak++; else break; }
+  const last = h2h.slice(-8);
+  const opts = sel => S.players.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  // nemesis: who has beaten player A the most
+  const beat = {}; S.matches.forEach(m => { const i = m.p.indexOf(a); if (i >= 0 && m.winner !== i) beat[m.p[1 - i]] = (beat[m.p[1 - i]] || 0) + 1; });
+  const nem = Object.entries(beat).sort((x, y) => y[1] - x[1])[0];
+  const total = wa + wb;
+  return `<div class="card rival">
+    <div class="row" style="justify-content:space-between"><h3>Rivalry</h3><span class="muted" style="font-size:.82rem">All matches, casual + competitive</span></div>
+    <div class="rv-pick"><select id="rivalA" data-ch="rivalA" aria-label="First player">${opts(a)}</select><span class="muted">vs</span><select id="rivalB" data-ch="rivalB" aria-label="Second player">${opts(b)}</select></div>
+    ${total ? `<div class="rv-score"><div class="rv-n" style="color:var(--p1)">${esc(pname(a))}</div><div class="rv-num num"><b style="color:var(--p1)">${wa}</b><span class="muted">–</span><b style="color:var(--p2)">${wb}</b></div><div class="rv-n" style="color:var(--p2);text-align:right">${esc(pname(b))}</div></div>
+      <div class="fbar"><i style="width:${wa / total * 100}%;background:var(--p1)"></i><i style="width:${wb / total * 100}%;background:var(--p2)"></i></div>
+      <div class="row" style="justify-content:space-between;gap:8px"><span class="muted" style="font-size:.84rem">Casual ${split('casual')} · Competitive ${split('competitive')}</span>
+        <span class="rv-last" aria-label="Recent results">${last.map(m => `<i class="${won(m, a) ? 'a' : 'b'}" title="${fmtDate(m.date)} ${m.score[m.p.indexOf(a)]}–${m.score[m.p.indexOf(b)]}"></i>`).join('')}</span></div>
+      <div style="font-size:.9rem"><b>${wa === wb ? 'Dead even' : esc(pname(wa > wb ? a : b)) + ' leads'}</b>${streak > 1 ? ` · ${esc(pname(who))} has won the last ${streak}` : ''}</div>`
+      : `<div class="muted">No matches between these two yet.</div>`}
+    ${nem ? `<div class="note">Nemesis of ${esc(pname(a))}: <b>${esc(pname(nem[0]))}</b>, with ${nem[1]} win${nem[1] > 1 ? 's' : ''} against them.</div>` : ''}
+  </div>`;
+}
 function vInsights() {
+  if (insPlayer === null) insPlayer = player(S.settings.me) ? S.settings.me : '';
   const ms = S.matches.filter(m => m.mode === insMode && (!insPlayer || m.p.includes(insPlayer)));
   const pRows = {}, fin = {spin: 0, burst: 0, over: 0, xtreme: 0, penalty: 0}, cRows = {}, partRows = {};
   let rounds = 0;
@@ -1025,10 +1076,11 @@ function vInsights() {
   const partBy = cat => Object.values(partRows).filter(x => P[x.pid]?.cat === cat && x.w + x.l >= 2).sort((a, b) => pct(b.w, b.w + b.l) - pct(a.w, a.w + a.l) || (b.w + b.l) - (a.w + a.l)).slice(0, 6);
   const partTable = (cat, title) => { const rows = partBy(cat); return `<div class="card"><h3 style="margin-bottom:8px">${title}</h3>${rows.length ? rows.map(x => `<div class="row" style="flex-wrap:nowrap;padding:5px 0">${icon(x.pid, 30)}<span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pn(x.pid))}</span><span class="muted num" style="font-size:.82rem">${x.w}–${x.l}</span><b class="num" style="width:44px;text-align:right">${pct(x.w, x.w + x.l)}%</b></div>`).join('') : '<div class="muted" style="font-size:.88rem">Needs at least 2 tagged rounds.</div>'}</div>`; };
   return `<div class="head"><div><div class="eyebrow">Insights</div><h1>${insMode === 'competitive' ? 'Competitive' : 'Casual'} stats</h1></div>
-     <div class="row"><select id="insp" data-ch="insplayer" aria-label="Player"><option value="">All players</option>${S.players.map(p => `<option value="${p.id}"${p.id === insPlayer ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+     <div class="row">${player(S.settings.me) ? `<div class="seg" role="group" aria-label="Whose stats"><button data-a="insme" data-v="${S.settings.me}" aria-pressed="${insPlayer === S.settings.me}">Just me</button><button data-a="insme" data-v="" aria-pressed="${!insPlayer}">Everyone</button></div>` : ''}<select id="insp" data-ch="insplayer" aria-label="Player"><option value="">All players</option>${S.players.map(p => `<option value="${p.id}"${p.id === insPlayer ? ' selected' : ''}>${esc(p.name)}${p.id === S.settings.me ? ' (you)' : ''}</option>`).join('')}</select>
      <div class="seg mode" role="group"><button data-a="insmode" data-v="casual" aria-pressed="${insMode === 'casual'}">Casual</button><button data-a="insmode" data-v="competitive" aria-pressed="${insMode === 'competitive'}">Competitive</button></div></div></div>
    ${ms.length ? `
    <div class="grid g4">${tiles.map(([k, v]) => `<div class="card tile"><span class="v num">${v}</span><span class="k">${k}</span></div>`).join('')}</div>
+   ${vRivalry()}
    <div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="row" style="justify-content:space-between"><h3>How points were scored</h3><span class="muted num">${finTotal} pts</span></div>
      <div class="fbar">${Object.entries(fin).filter(([, v]) => v).map(([k, v]) => `<i style="width:${v / finTotal * 100}%;background:${fc[k]}" title="${k} ${v}"></i>`).join('')}</div>
      <div class="legend">${Object.entries(fin).map(([k, v]) => `<span><i style="background:${fc[k]}"></i>${k[0].toUpperCase() + k.slice(1)} <b class="num">${v}</b> <span class="num">(${pct(v, finTotal)}%)</span></span>`).join('')}</div></div>
@@ -1039,14 +1091,18 @@ function vInsights() {
      ${combosSorted.map(c => { const best = Object.entries(c.fin).sort((a, b) => b[1] - a[1])[0]; return `<tr><td><b>${esc(c.label)}</b></td><td class="r">${c.w + c.l}</td><td class="r">${c.w}</td><td><div class="barcell"><div class="b"><i style="width:${pct(c.w, c.w + c.l)}%"></i></div><span class="num">${pct(c.w, c.w + c.l)}%</span></div></td><td>${best ? `<span class="chip"><i class="tdot" style="background:${fc[best[0]]}"></i>${best[0]} ×${best[1]}</span>` : '—'}</td></tr>`; }).join('')}
    </tbody></table></div>` : '<div class="muted">Tag which bey each player used in the scorer to see combo stats.</div>'}</div>
    <div class="grid g3">${partTable('blade', 'Best blades')}${partTable('ratchet', 'Best ratchets')}${partTable('bit', 'Best bits')}</div>
-   <div class="card"><h3 style="margin-bottom:6px">Recent matches</h3>${matchList(ms.slice(0, 12))}</div>`
-   : `<div class="empty"><h3>No ${insMode} matches${insPlayer ? ' for ' + esc(pname(insPlayer)) : ''} yet</h3>Switch the scorer to ${insMode === 'casual' ? 'Casual' : 'Competitive'} and finish a match. Stats appear here.<br><br><button class="btn primary" data-a="nav" data-v="score">Open scorer</button></div>`}`;
+   <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:4px"><h3>Matches</h3><span class="muted" style="font-size:.82rem">Tap the bin to remove a wrongly entered match</span></div>${matchList(insShowAll ? ms : ms.slice(0, 15))}${!insShowAll && ms.length > 15 ? `<div class="row" style="justify-content:center;margin-top:8px"><button class="btn sm" data-a="insmore">Show all ${ms.length}</button></div>` : ''}</div>`
+   : `${vRivalry()}<div class="empty"><h3>No ${insMode} matches${insPlayer ? ' for ' + esc(pname(insPlayer)) : ''} yet</h3>Switch the scorer to ${insMode === 'casual' ? 'Casual' : 'Competitive'} and finish a match. Stats appear here.<br><br><button class="btn primary" data-a="nav" data-v="score">Open scorer</button></div>`}`;
 }
 function matchList(ms) {
-  if (!ms.length) return '<div class="muted">No matches.</div>';
-  return `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Players</th><th class="r">Score</th><th>Type</th><th class="r">Clips</th><th></th></tr></thead><tbody>${ms.map(m => {
+  if (!ms.length) return '<div class="muted">No matches yet.</div>';
+  return `<div class="mlist">${ms.map(m => {
     const n = m.names || m.p.map(pname); const clips = S.clips.filter(c => c.matchId === m.id).length;
-    return `<tr><td class="muted" style="white-space:nowrap">${fmtDate(m.date)}</td><td><b style="color:var(${m.winner === 0 ? '--p1' : '--ink'})">${esc(n[0])}</b> <span class="muted">vs</span> <b style="color:var(${m.winner === 1 ? '--p2' : '--ink'})">${esc(n[1])}</b></td><td class="r"><b>${m.score[0]}–${m.score[1]}</b></td><td><span class="chip">${m.mode}</span></td><td class="r">${clips ? `<button class="btn sm" data-a="matchclips" data-v="${m.id}">${I.play}${clips}</button>` : '—'}</td><td class="r"><button class="btn sm ghost danger" data-a="delmatch" data-v="${m.id}" aria-label="Delete match">${I.trash}</button></td></tr>`; }).join('')}</tbody></table></div>`;
+    const t = m.tid ? S.tourneys.find(x => x.id === m.tid) : null;
+    return `<div class="mrow"><div class="minfo"><div class="mtop"><b style="color:var(${m.winner === 0 ? '--p1' : '--muted'})">${esc(n[0])}</b><span class="num mscore">${m.score[0]}–${m.score[1]}</span><b style="color:var(${m.winner === 1 ? '--p2' : '--muted'})">${esc(n[1])}</b></div>
+      <div class="muted msub">${fmtDate(m.date)} · ${fmtTime(m.date)} · ${m.mode}${t ? ' · ' + esc(t.name) : ''}</div></div>
+      ${clips ? `<button class="iconbtn sm" data-a="matchclips" data-v="${m.id}" aria-label="Watch ${clips} clips">${I.video}</button>` : ''}
+      <button class="iconbtn sm del" data-a="delmatch" data-v="${m.id}" aria-label="Delete match">${I.trash}</button></div>`; }).join('')}</div>`;
 }
 
 /* ================= TOURNAMENTS ================= */
@@ -1084,7 +1140,7 @@ function vPlayers() {
    ${S.players.length ? `<div class="grid g2">${S.players.map(p => { const c = recordWin(p.id, 'casual'), k = recordWin(p.id, 'competitive');
      return `<button class="card pickable" data-a="openplayer" data-v="${p.id}" style="display:flex;gap:12px;align-items:center;text-align:left;cursor:pointer">
        <span class="av" style="background:${esc(p.color || PCOLORS[0])}">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-       <span style="flex:1;min-width:0"><b style="font-family:var(--display);font-size:1.1rem">${esc(p.name)}</b><br>
+       <span style="flex:1;min-width:0"><b style="font-family:var(--display);font-size:1.1rem">${esc(p.name)}</b>${p.id === S.settings.me ? ' <span class="chip on">You</span>' : ''}<br>
        <span class="muted" style="font-size:.86rem">Competitive ${k.w}–${k.l}${k.w + k.l ? ` (${k.rate}%)` : ''} · Casual ${c.w}–${c.l}${c.w + c.l ? ` (${c.rate}%)` : ''}</span></span></button>`; }).join('')}</div>`
      : `<div class="empty"><h3>No players yet</h3>Add yourself and your friends. The scorer remembers the last two players.</div>`}`;
 }
@@ -1171,7 +1227,7 @@ async function playClip(id) {
   $('#layer').innerHTML = `<div class="viewer" role="dialog" aria-label="Clip player">
     <div class="vtop"><button class="btn sm" data-a="viewer-close">${I.x}Close</button>
       <div class="vt"><b>${esc(n[0])} vs ${esc(n[1])}${c.round ? ' · Round ' + c.round : ''}</b><span>${fmtDate(c.date)} ${fmtTime(c.date)}${m ? ` · ${m.score[0]}–${m.score[1]}` : ''}</span></div></div>
-    <div class="vstage" id="vstage"><video id="pv" src="${u}" playsinline webkit-playsinline disablepictureinpicture preload="auto"></video><button class="vbig" data-a="vtoggle" id="vbig" aria-label="Play">${I.play}</button></div>
+    <div class="vstage" id="vstage"><video id="pv" src="${u}" playsinline webkit-playsinline disablepictureinpicture preload="auto"></video><button class="vbig" data-a="vtoggle" id="vbig" aria-label="Play">${I.play}</button><span class="vbub num" id="vbub" hidden></span><span class="vhint">Drag sideways on the video to scrub</span></div>
     <div class="vctrl">
       <div class="row" style="flex-wrap:nowrap;gap:10px"><button class="iconbtn" data-a="vtoggle" id="vpp" aria-label="Play">${I.play}</button><input type="range" id="vscrub" data-in="scrub" min="0" max="1000" value="0" aria-label="Position" style="flex:1;min-width:0"><span class="num vtime" id="vtime">0:00</span></div>
       <div class="row" style="justify-content:space-between;gap:8px"><div class="seg" role="group" id="spd" aria-label="Speed">${[0.1, 0.25, 0.5, 1].map(r => `<button data-a="speed" data-v="${r}" aria-pressed="${r === 1}">${r}×</button>`).join('')}</div>
@@ -1184,10 +1240,15 @@ async function playClip(id) {
   const sync = () => { const p = v.paused; $('#vpp').innerHTML = p ? I.play : I.pause; $('#vbig').hidden = !p; cancelAnimationFrame(raf); tick(); };
   v.addEventListener('play', sync); v.addEventListener('pause', sync); v.addEventListener('ended', sync); v.addEventListener('seeked', tick); v.addEventListener('loadedmetadata', tick);
   v.addEventListener('click', () => v.paused ? v.play() : v.pause());
-  // swipe down on the video to close
-  let y0 = null; const stg = $('#vstage');
-  stg.addEventListener('touchstart', e => { y0 = e.touches.length === 1 ? e.touches[0].clientY : null; }, {passive: true});
-  stg.addEventListener('touchend', e => { if (y0 !== null && e.changedTouches[0].clientY - y0 > 90) closeViewer(); y0 = null; }, {passive: true});
+  // drag sideways on the video to scrub; drag down to close
+  let g = null; const stg = $('#vstage'), bub = $('#vbub');
+  stg.addEventListener('touchstart', e => { if (e.touches.length !== 1 || e.target.closest('button')) return; const t = e.touches[0]; g = {x: t.clientX, y: t.clientY, t0: v.currentTime, lock: null, was: !v.paused}; }, {passive: true});
+  stg.addEventListener('touchmove', e => {
+    if (!g) return; const t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+    if (!g.lock) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; g.lock = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'; if (g.lock === 'x') v.pause(); }
+    if (g.lock === 'x' && v.duration) { e.preventDefault(); const nt = Math.max(0, Math.min(v.duration, g.t0 + dx / stg.clientWidth * v.duration)); v.currentTime = nt; bub.textContent = fmtDur(nt) + ' / ' + fmtDur(v.duration); bub.hidden = false; tick(); }
+  }, {passive: false});
+  stg.addEventListener('touchend', e => { if (!g) return; const dy = e.changedTouches[0].clientY - g.y; if (g.lock === 'y' && dy > 90) closeViewer(); bub.hidden = true; g = null; }, {passive: true});
 }
 function closeViewer() { const v = $('#pv'); try { v?.pause(); } catch {} $('#layer').innerHTML = ''; }
 async function shareOrDownload(blob, filename, title) {
@@ -1214,6 +1275,9 @@ function vPrefs() {
   const step = (k, min, max) => `<div class="stepper on"><button data-a="pref-" data-v="${k}" data-i="${min}" aria-label="Decrease">−</button><span class="num">${s[k]}</span><button data-a="pref+" data-v="${k}" data-i="${max}" aria-label="Increase">+</button></div>`;
   return `<div class="head"><div><div class="eyebrow">Setup</div><h1>Settings</h1></div><span class="sync${Store.mode === 'cloud' ? ' cloud' : ''}"><i></i>${esc(Store.status)}</span></div>
    <div class="card" style="display:flex;flex-direction:column;gap:14px">
+     <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Which player are you?</b><div class="muted" style="font-size:.86rem">You'll always be Player 1 in new matches, and Insights can show just your stats.</div></div>
+       <select id="meSel" data-ch="me"><option value="">Not set</option>${S.players.map(p => `<option value="${p.id}"${p.id === s.me ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+     <div class="row" style="justify-content:space-between"><div style="flex:1;min-width:200px"><b>Swap sides on the scorer</b><div class="muted" style="font-size:.86rem">Show Player 2 on the left, to match where you're standing at the stadium.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="swapSides" data-ch="swapsides"${s.swapSides ? ' checked' : ''}> On</label></div>
      <div class="row" style="justify-content:space-between"><div><b>Points to win</b><div class="muted" style="font-size:.86rem">A match ends when a player reaches this score. Standard is 4.</div></div>${step('pointsToWin', 1, 12)}</div>
      <div class="row" style="justify-content:space-between"><div><b>Launch error limit</b><div class="muted" style="font-size:.86rem">Faults allowed per round before the opponent gets +1.</div></div>${step('faultLimit', 1, 5)}</div>
      <div class="row" style="justify-content:space-between"><div><b>Blade names</b><div class="muted" style="font-size:.86rem">Hasbro (Sword Dran) or Takara Tomy (Dran Sword). Same parts either way.</div></div>${namingSeg()}</div>
@@ -1226,7 +1290,7 @@ function vPrefs() {
      <div class="row"><button class="btn" data-a="exportdata">${I.save}Export backup</button><button class="btn" data-a="importdata">Import backup</button></div>
      <div class="muted" style="font-size:.84rem">App version ${APP_VERSION}. A backup is a JSON file of all your data. Importing adds to what's here; items with the same ID are replaced. Use it to bring data over from the earlier version of this app.</div></div>
    <div class="card" style="display:flex;flex-direction:column;gap:10px"><h3>Recording</h3>
-     <div class="row" style="justify-content:space-between"><div><b>Start recording on 3-2-1</b><div class="muted" style="font-size:.86rem">If the camera is open, the countdown starts recording and the match result stops it.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="autorec" data-ch="autorec"${s.autoRec !== false ? ' checked' : ''}> On</label></div></div>`;
+     <div class="row" style="justify-content:space-between"><div><b>Start recording on 3-2-1</b><div class="muted" style="font-size:.86rem">If the camera is open, the countdown starts recording and the match result stops it.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="autorec" data-ch="autorec"${s.recOn321 ? ' checked' : ''}> On</label></div></div>`;
 }
 
 /* ================= EVENTS ================= */
@@ -1237,6 +1301,9 @@ document.addEventListener('click', async e => {
   switch (a) {
     case 'nav': go(v); break;
     case 'menu': menuOpen = !menuOpen; renderNav(); break;
+    case 'syncnow': if (Store.user) { el.disabled = true; Store.connect().then(() => toast(Store.mode === 'cloud' ? 'Synced' : Store.status)); } else toast(Store.configured ? 'Sign in with Discord to sync' : 'Sync isn\'t set up for this copy of the app'); break;
+    case 'insme': insPlayer = v; insShowAll = false; render(); break;
+    case 'insmore': insShowAll = true; render(); break;
     case 'menu-close': menuOpen = false; renderNav(); break;
     case 'sheet-close': closeSheet(); break;
     case 'confirm-yes': { const f = pendingConfirm; pendingConfirm = null; closeSheet(); f && f(); break; }
@@ -1279,16 +1346,22 @@ document.addEventListener('click', async e => {
     case 'bulkskip': if (bulk[i]) { bulk[i].pid = ''; el.closest('.citem').style.opacity = .35; el.disabled = true; } break;
     case 'savebulk': { let n = 0; bulk.forEach(b => { if (b.pid) { Store.put('photo_' + slug(b.pid), {kind: 'photo', pid: b.pid, src: b.src}); n++; } }); bulk = []; closeSheet(); render(); toast(`${n} photo${n === 1 ? '' : 's'} saved`); break; }
     case 'delphoto': Store.del('photo_' + slug(v)); partDetail(v); render(); break;
-    case 'addpart': openSheet('Custom part', `<label class="f">Part type<select id="cpcat">${Object.entries(CAT_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
-        <label class="f">Name<input type="text" id="cpname" placeholder="e.g. Shark Gill"></label><label class="f">Code (for ratchets, bits and assists)<input type="text" id="cpcode" placeholder="e.g. 3-60 or LF"></label>
-        <label class="f">Type<select id="cptype"><option value="">Not set</option><option value="A">Attack</option><option value="D">Defense</option><option value="S">Stamina</option><option value="B">Balance</option></select></label>
+    case 'addpart': openSheet('Custom part', `<label class="f">Part type<select id="cpcat" data-ch="cpcat">${Object.entries(CAT_LABEL).map(([k, l]) => `<option value="${k}"${k === partCat ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <div id="cpmore" style="display:flex;flex-direction:column;gap:14px">${cpFields(partCat)}</div>
         <div class="row" style="justify-content:flex-end"><button class="btn" data-a="sheet-close">Cancel</button><button class="btn primary" data-a="savepart">Add part</button></div>`); break;
-    case 'savepart': { const cat = $('#cpcat').value, name = $('#cpname').value.trim(), code = $('#cpcode').value.trim() || name; if (!name) return toast('Give the part a name'); const key = 'c-' + slug(code + '-' + name); const pid = cat + ':' + key;
-      Store.put('part_' + slug(pid), {kind: 'part', pid, cat, key, name, code, type: $('#cptype').value}); const c = {sets: {...S.coll.sets}, extra: {...S.coll.extra}}; c.extra[pid] = 1; saveColl(c); closeSheet(); partCat = cat; render(); toast('Part added to your collection'); break; }
+    case 'savepart': {
+      const cat = $('#cpcat').value, base = $('#cpbase')?.value || '', bp = P[base];
+      const name = $('#cpname').value.trim() || (bp ? dn(bp) + ' (3D printed)' : '');
+      if (!name) return toast('Pick the official part it copies, or give it a name');
+      const code = bp ? (bp.code || '') : ($('#cpcode')?.value.trim() || name);
+      const type = bp ? (bp.type0 || bp.type || '') : ($('#cptype')?.value || '');
+      const key = 'c-' + slug((bp ? bp.key : code) + '-' + name) + '-' + uid().slice(-4); const pid = cat + ':' + key;
+      Store.put('part_' + slug(pid), {kind: 'part', pid, cat, key, name, code, type, base});
+      const c = {sets: {...S.coll.sets}, extra: {...S.coll.extra}}; c.extra[pid] = 1; saveColl(c); closeSheet(); partCat = cat; render(); toast('Part added to your collection'); break; }
     case 'delpart': confirmSheet('Delete custom part?', 'It will be removed from your collection.', 'Delete', () => { Store.del('part_' + slug(v)); delete P[v]; const c = {sets: {...S.coll.sets}, extra: {...S.coll.extra}}; delete c.extra[v]; saveColl(c); render(); }); break;
     // insights
     case 'insmode': insMode = v; render(); break;
-    case 'delmatch': confirmSheet('Delete match?', 'Its points will be removed from all stats.', 'Delete', () => { Store.del('match_' + v); render(); }); break;
+    case 'delmatch': { const mm = S.matches.find(x => x.id === v); const nn = mm ? (mm.names || mm.p.map(pname)) : ['', '']; confirmSheet('Delete this match?', mm ? `${nn[0]} ${mm.score[0]}–${mm.score[1]} ${nn[1]} on ${fmtDate(mm.date)} will be removed from all stats, rivalries and tournaments. Its clips are kept.` : 'It will be removed from all stats.', 'Delete match', () => { Store.del('match_' + v); render(); }); break; }
     case 'matchclips': clipMatch = v; clipFilter = 'match'; closeSheet(); location.hash = 'clips'; render(); break;
     // tourneys
     case 'newtourney': openSheet('New tournament', `<label class="f">Name<input type="text" id="tname" placeholder="e.g. Saturday Locals #4"></label><div class="grid g2"><label class="f">Date<input type="date" id="tdate" value="${new Date().toISOString().slice(0, 10)}"></label><label class="f">Location (optional)<input type="text" id="tloc"></label></div><div class="row" style="justify-content:flex-end"><button class="btn" data-a="sheet-close">Cancel</button><button class="btn primary" data-a="savetourney">Create</button></div>`); break;
@@ -1343,9 +1416,14 @@ document.addEventListener('change', e => {
   if (ch === 'pickall') { pickAll = el.checked; setSheet(pickerBody()); }
   if (ch === 'bulkpick') { if (bulk[i]) bulk[i].pid = el.value; }
   if (ch === 'ownedonly') { ownedOnly = el.checked; render(); }
-  if (ch === 'insplayer') { insPlayer = el.value; render(); }
+  if (ch === 'insplayer') { insPlayer = el.value; insShowAll = false; render(); }
   if (ch === 'sound') saveSettings({sound: el.checked});
-  if (ch === 'autorec') saveSettings({autoRec: el.checked});
+  if (ch === 'autorec') saveSettings({recOn321: el.checked});
+  if (ch === 'me') { saveSettings({me: el.value}); if (M && !M.rounds.length && el.value) { M.p[0] = el.value; if (M.p[1] === el.value) M.p[1] = ''; persistLive(); } render(); }
+  if (ch === 'swapsides') { saveSettings({swapSides: el.checked}); render(); }
+  if (ch === 'rivalA' || ch === 'rivalB') { const r = [...rivalPair()]; r[ch === 'rivalA' ? 0 : 1] = el.value; saveSettings({rival: r}); render(); }
+  if (ch === 'cpcat') { const m = $('#cpmore'); if (m) m.innerHTML = cpFields(el.value); }
+  if (ch === 'cpbase') { const n = $('#cpname'); if (n) n.placeholder = el.value ? dn(P[el.value]) + ' (3D printed)' : 'Name'; }
   if (ch === 'camfps') Cam.setFps(+el.value);
   if (ch === 'clipfps') { const c = S.clips.find(x => x.id === el.dataset.v); if (c) Store.put('clip_' + c.id, {...c, fps: +el.value}); }
 });
@@ -1374,25 +1452,50 @@ window.addEventListener('hashchange', () => { routeFromHash(); render(); window.
 
 /* ================= GESTURES ================= */
 let sw = null;
+const viewIndex = () => VIEWS.findIndex(v => v[0] === view);
 document.addEventListener('touchstart', e => {
   sw = null;
   if (e.touches.length !== 1 || menuOpen || $('#layer').innerHTML) return;
+  if (!e.target.closest('#view')) return; // the header never takes part in a swipe
   const t = e.touches[0];
-  if (t.clientX < 24 || t.clientX > innerWidth - 24) return; // leave the browser's edge-swipe alone
+  if (t.clientX < 18 || t.clientX > innerWidth - 18) return; // leave the browser's edge-swipe alone
   if (e.target.closest('input,select,textarea,video,.camdock,.tbl-wrap,.seg,.combochips,.noswipe')) return;
-  sw = {x: t.clientX, y: t.clientY, t: Date.now()};
+  sw = {x: t.clientX, y: t.clientY, t: Date.now(), lock: null, dx: 0, el: $('#view > .wrap')};
 }, {passive: true});
-document.addEventListener('touchend', e => {
-  if (!sw) return; const t = e.changedTouches[0];
-  const dx = t.clientX - sw.x, dy = t.clientY - sw.y, dt = Date.now() - sw.t; sw = null;
-  if (dt > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
-  const i = VIEWS.findIndex(v => v[0] === view), j = i + (dx < 0 ? 1 : -1);
-  if (j < 0 || j >= VIEWS.length) return;
-  go(VIEWS[j][0], dx < 0 ? 1 : -1);
-}, {passive: true});
+document.addEventListener('touchmove', e => {
+  if (e.touches.length > 1) { e.preventDefault(); return; } // no pinch zoom
+  if (!sw || !sw.el) return;
+  const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+  if (!sw.lock) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    sw.lock = Math.abs(dx) > Math.abs(dy) * 1.4 ? 'x' : 'y';
+    if (sw.lock === 'y') { sw = null; return; }
+  }
+  e.preventDefault();
+  const i = viewIndex(), edge = (dx > 0 && i === 0) || (dx < 0 && i === VIEWS.length - 1);
+  const d = edge ? dx * .2 : dx;
+  sw.dx = dx;
+  sw.el.style.transition = 'none';
+  sw.el.style.transform = `translate3d(${d}px,0,0)`;
+  sw.el.style.opacity = String(1 - Math.min(Math.abs(d) / innerWidth, .6) * .6);
+}, {passive: false});
+function endSwipe() {
+  if (!sw) return; const s = sw; sw = null;
+  if (s.lock !== 'x' || !s.el) return;
+  const i = viewIndex(), j = i + (s.dx < 0 ? 1 : -1), fast = Math.abs(s.dx) / Math.max(Date.now() - s.t, 1) > .45;
+  if (j >= 0 && j < VIEWS.length && (Math.abs(s.dx) > innerWidth * .25 || (fast && Math.abs(s.dx) > 40))) {
+    s.el.style.transition = 'transform .17s cubic-bezier(.4,0,1,1), opacity .17s';
+    s.el.style.transform = `translate3d(${s.dx < 0 ? -innerWidth : innerWidth}px,0,0)`; s.el.style.opacity = '0';
+    setTimeout(() => go(VIEWS[j][0], s.dx < 0 ? 1 : -1), 160);
+  } else {
+    s.el.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s';
+    s.el.style.transform = ''; s.el.style.opacity = '';
+  }
+}
+document.addEventListener('touchend', endSwipe, {passive: true});
+document.addEventListener('touchcancel', endSwipe, {passive: true});
 // no pinch zoom (iOS ignores the viewport setting, so block the gesture itself)
 document.addEventListener('gesturestart', e => e.preventDefault());
-document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, {passive: false});
 
 /* ================= BOOT ================= */
 routeFromHash();
