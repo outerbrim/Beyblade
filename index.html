@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Beyblade X Tracker</title>
+<meta name="description" content="Score Beyblade X battles, build combos and decks, track your collection, players, tournaments and battle clips.">
+<meta name="theme-color" content="#2A48F5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BeyX">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="nav" aria-label="Sections"></nav>
+  <main id="view"></main>
+</div>
+<div id="layer"></div>
+<input type="file" id="camIn" accept="video/*" capture="environment" hidden>
+<input type="file" id="importIn" accept="video/*" hidden>
+<input type="file" id="backupIn" accept="application/json,.json" hidden>
+<div id="camdock"></div>
+<input type="file" id="photoIn" accept="image/*" hidden>
+<input type="file" id="bulkIn" accept="image/*" multiple hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
