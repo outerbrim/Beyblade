@@ -1,4 +1,4 @@
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -475,12 +475,11 @@ const VIEW_NAME = {tournaments: 'Tournaments', prefs: 'Settings'};
 function renderNav() {
   const cur = VIEWS.find(v => v[0] === view);
   $('#nav').innerHTML = `<header class="topbar">
-    ${acctChip()}
-    <div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div>
+    <div class="tb-left">${acctChip()}<div class="tb-title"><span class="tb-logo">BEY<b>X</b></span><span class="tb-sec">${VIEW_NAME[cur[0]] || cur[1]}</span></div></div>
     <nav class="tabs" aria-label="Sections">${VIEWS.filter(([k]) => k !== 'prefs').map(([k, l, ic]) => `<button class="tab" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}</nav>
-    ${liveScore()}
+    <div class="tb-right">${liveScore()}
     <button class="iconbtn" data-a="nav" data-v="prefs" aria-label="Settings"${view === 'prefs' ? ' aria-current="page"' : ''}>${I.gear}</button>
-    <button class="iconbtn menubtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button>
+    <button class="iconbtn menubtn" data-a="menu" aria-label="${menuOpen ? 'Close menu' : 'Menu'}" aria-expanded="${menuOpen}">${menuOpen ? I.x : I.menu}</button></div>
   </header>
   ${menuOpen ? `<div class="menu-back" data-a="menu-close"></div><nav class="menu" aria-label="Sections">${VIEWS.map(([k, l, ic]) => `<button class="menuitem" data-a="nav" data-v="${k}"${view === k ? ' aria-current="page"' : ''}>${ic}<span>${VIEW_NAME[k] || l}</span></button>`).join('')}<div class="menu-hint">Swipe left or right on any screen to move to the next one.</div></nav>` : ''}`;
 }
@@ -504,6 +503,7 @@ function render(fromSync) {
   slideDir = 0;
   if (view === 'clips') hydrateClips();
   if (Cam.stream) Cam.paintQS();
+  scheduleGhosts();
   if (fromSync) window.scrollTo(0, scroll);
 }
 
@@ -1618,55 +1618,85 @@ $('#bulkIn').addEventListener('change', e => e.target.files.length && handleBulk
 window.addEventListener('hashchange', () => { routeFromHash(); render(); window.scrollTo(0, 0); });
 
 /* ================= GESTURES ================= */
-let sw = null;
+let sw = null, swBusy = false, ghosts = {}, ghostTimer = 0;
 const viewIndex = () => VIEWS.findIndex(v => v[0] === view);
 const VIEW_FN = () => ({score: vScore, build: vBuild, collection: vCollection, insights: vInsights, tournaments: vTourneys, players: vPlayers, clips: vClips, prefs: vPrefs});
+const isTouch = () => window.matchMedia ? matchMedia('(pointer: coarse)').matches : true;
+// Build the screens on either side ahead of time, parked just off-screen, so a swipe only has to move them.
+function buildGhost(dir) {
+  const j = viewIndex() + dir; if (j < 0 || j >= VIEWS.length) return null;
+  const g = document.createElement('div'); g.className = 'swipe-next'; g.setAttribute('aria-hidden', 'true'); g.inert = true;
+  try { g.innerHTML = `<div class="wrap">${VIEW_FN()[VIEWS[j][0]]()}</div>`; } catch { return null; }
+  g.style.transform = `translate3d(${dir * 100}%,0,0)`;
+  $('#view').appendChild(g); return g;
+}
+function buildGhosts() {
+  if (sw || swBusy) return;
+  Object.values(ghosts).forEach(g => g.remove()); ghosts = {};
+  for (const dir of [-1, 1]) { const g = buildGhost(dir); if (g) ghosts[dir] = g; }
+}
+function scheduleGhosts() {
+  if (!isTouch()) return;
+  ghosts = {}; clearTimeout(ghostTimer);
+  ghostTimer = setTimeout(() => window.requestIdleCallback ? requestIdleCallback(buildGhosts, {timeout: 600}) : buildGhosts(), 150);
+}
+function park(g, dir) { if (!g) return; g.style.transition = 'none'; g.style.transform = `translate3d(${dir * 100}%,0,0)`; }
 document.addEventListener('touchstart', e => {
   sw = null;
-  if (e.touches.length !== 1 || menuOpen || $('#layer').innerHTML) return;
+  if (swBusy || e.touches.length !== 1 || menuOpen || $('#layer').innerHTML) return;
   if (e.target.closest('#nav,#layer,#camdock')) return; // the header never takes part in a swipe
   const t = e.touches[0];
   if (t.clientX < 18 || t.clientX > innerWidth - 18) return; // leave the browser's edge-swipe alone
   if (e.target.closest('input,select,textarea,video,.tbl-wrap,.seg,.combochips,.noswipe')) return;
-  sw = {x: t.clientX, y: t.clientY, t: Date.now(), lock: null, dx: 0, el: $('#view > .wrap'), ghost: null, dir: 0};
+  sw = {x: t.clientX, y: t.clientY, t: Date.now(), lastX: t.clientX, lastT: Date.now(), vx: 0, lock: null, dx: 0, el: $('#view > .wrap'), dir: 0};
 }, {passive: true});
-function makeGhost(dir) {
-  const j = viewIndex() + dir; if (j < 0 || j >= VIEWS.length) return null;
-  const g = document.createElement('div'); g.className = 'swipe-next'; g.setAttribute('aria-hidden', 'true');
-  g.style.top = (window.scrollY + 14) + 'px';
-  try { g.innerHTML = `<div class="wrap">${VIEW_FN()[VIEWS[j][0]]()}</div>`; } catch { g.innerHTML = '<div class="wrap"></div>'; }
-  $('#view').appendChild(g); return g;
-}
 document.addEventListener('touchmove', e => {
   if (e.touches.length > 1) { e.preventDefault(); return; } // no pinch zoom
   if (!sw || !sw.el) return;
-  const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+  const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, now = Date.now();
   if (!sw.lock) {
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-    sw.lock = Math.abs(dx) > Math.abs(dy) * 1.4 ? 'x' : 'y';
+    sw.lock = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y';
     if (sw.lock === 'y') { sw = null; return; }
+    clearTimeout(ghostTimer);
+    const top = (window.scrollY + 14) + 'px';
+    for (const d of [-1, 1]) { if (!ghosts[d] || !ghosts[d].isConnected) ghosts[d] = buildGhost(d); if (ghosts[d]) ghosts[d].style.top = top; }
   }
   e.preventDefault();
-  const dir = dx < 0 ? 1 : -1, W = $('#view').clientWidth;
-  if (sw.dir !== dir) { sw.ghost?.remove(); sw.ghost = makeGhost(dir); sw.dir = dir; }
-  const d = sw.ghost ? dx : dx * .2; // rubber band at the first and last screen
+  sw.vx = (t.clientX - sw.lastX) / Math.max(now - sw.lastT, 1); sw.lastX = t.clientX; sw.lastT = now;
+  const dir = dx < 0 ? 1 : -1, W = $('#view').clientWidth, g = ghosts[dir];
+  if (sw.dir !== dir) { park(ghosts[-dir], -dir); sw.dir = dir; }
+  const d = g ? dx : dx * .2; // rubber band at the first and last screen
   sw.dx = dx;
   sw.el.style.transition = 'none'; sw.el.style.transform = `translate3d(${d}px,0,0)`;
-  if (sw.ghost) { sw.ghost.style.transition = 'none'; sw.ghost.style.transform = `translate3d(${d + dir * W}px,0,0)`; }
+  if (g) { g.style.transition = 'none'; g.style.transform = `translate3d(${d + dir * W}px,0,0)`; }
 }, {passive: false});
 function endSwipe() {
   if (!sw) return; const s = sw; sw = null;
   if (s.lock !== 'x' || !s.el) return;
-  const W = $('#view').clientWidth, dir = s.dir, fast = Math.abs(s.dx) / Math.max(Date.now() - s.t, 1) > .4;
-  const ease = 'transform .26s cubic-bezier(.22,.8,.24,1)';
-  if (s.ghost && (Math.abs(s.dx) > W * .22 || (fast && Math.abs(s.dx) > 35))) {
-    s.el.style.transition = ease; s.ghost.style.transition = ease;
-    s.el.style.transform = `translate3d(${-dir * W}px,0,0)`; s.ghost.style.transform = 'translate3d(0,0,0)';
+  const W = $('#view').clientWidth, dir = s.dir, g = ghosts[dir];
+  const flick = Math.abs(s.vx) > .35 && Math.sign(s.vx) === -dir;
+  if (g && (Math.abs(s.dx) > W * .22 || flick)) {
+    swBusy = true;
+    const remaining = W - Math.abs(s.dx), speed = Math.max(Math.abs(s.vx), 1.2);
+    const dur = Math.round(Math.max(140, Math.min(280, remaining / speed)));
+    const ease = `transform ${dur}ms cubic-bezier(.2,.75,.3,1)`;
+    s.el.style.transition = ease; g.style.transition = ease;
+    s.el.style.transform = `translate3d(${-dir * W}px,0,0)`; g.style.transform = 'translate3d(0,0,0)';
     const target = VIEWS[viewIndex() + dir][0];
-    setTimeout(() => go(target, 0), 250);
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      menuOpen = false; slideDir = 0; view = target;
+      try { history.replaceState(null, '', '#' + target); } catch {}
+      render(); window.scrollTo(0, 0); swBusy = false;
+    };
+    g.addEventListener('transitionend', finish, {once: true});
+    setTimeout(finish, dur + 60);
   } else {
+    const ease = 'transform .24s cubic-bezier(.2,.75,.3,1)';
     s.el.style.transition = ease; s.el.style.transform = '';
-    if (s.ghost) { s.ghost.style.transition = ease; s.ghost.style.transform = `translate3d(${dir * W}px,0,0)`; const g = s.ghost; setTimeout(() => g.remove(), 280); }
+    if (g) { g.style.transition = ease; g.style.transform = `translate3d(${dir * 100}%,0,0)`; }
   }
 }
 document.addEventListener('touchend', endSwipe, {passive: true});
