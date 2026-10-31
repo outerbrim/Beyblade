@@ -1,3 +1,4 @@
+const APP_VERSION = 3;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -1223,7 +1224,7 @@ function vPrefs() {
        : Store.configured ? `<div class="muted">Sign in with Discord on your phone and desktop to keep players, combos, decks, collection, matches and tournaments in sync. Anything you've made on this device is added to your account the first time you sign in.</div><div class="row"><button class="btn discord" data-a="signin">Sign in with Discord</button></div>`
        : `<div class="muted">Discord sign-in isn't set up for this copy of the app yet, so everything is saved on this device only. See the README to connect Supabase.</div>`}
      <div class="row"><button class="btn" data-a="exportdata">${I.save}Export backup</button><button class="btn" data-a="importdata">Import backup</button></div>
-     <div class="muted" style="font-size:.84rem">A backup is a JSON file of all your data. Importing adds to what's here; items with the same ID are replaced. Use it to bring data over from the earlier version of this app.</div></div>
+     <div class="muted" style="font-size:.84rem">App version ${APP_VERSION}. A backup is a JSON file of all your data. Importing adds to what's here; items with the same ID are replaced. Use it to bring data over from the earlier version of this app.</div></div>
    <div class="card" style="display:flex;flex-direction:column;gap:10px"><h3>Recording</h3>
      <div class="row" style="justify-content:space-between"><div><b>Start recording on 3-2-1</b><div class="muted" style="font-size:.86rem">If the camera is open, the countdown starts recording and the match result stops it.</div></div><label class="row" style="gap:6px"><input type="checkbox" id="autorec" data-ch="autorec"${s.autoRec !== false ? ' checked' : ''}> On</label></div></div>`;
 }
