@@ -1,4 +1,4 @@
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]

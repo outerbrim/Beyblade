@@ -563,3 +563,6 @@ html.noscroll,html.noscroll body{overflow:hidden;overscroll-behavior:none}
 .launchbar:active{transform:scale(.98)}
 .launchbar[disabled]{opacity:.35;cursor:not-allowed}
 @media (orientation:landscape) and (max-height:540px){.launchbar{min-height:48px;font-size:1.05rem}}
+/* v9: outlined countdown button */
+.launchbar{background:transparent;color:var(--ink);border:2px solid var(--ink)}
+.launchbar:hover{background:var(--surface-2)}
