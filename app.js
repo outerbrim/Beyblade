@@ -1,4 +1,4 @@
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 /* ================= PARTS DATABASE (Takara Tomy Beyblade X) ================= */
 const BLADES = [
  // [name, type A/D/S/B/'' , line]
@@ -621,7 +621,6 @@ function vScore() {
   return `<div class="sbar">
      <div class="seg mode" role="group" aria-label="Game type"><button data-a="mode" data-v="casual" aria-pressed="${!comp}">Casual</button><button data-a="mode" data-v="competitive" aria-pressed="${comp}">Competitive</button></div>
      <div class="tools">
-       <button class="btn sm" data-a="countdown" aria-label="Countdown">${I.timer}<span>3-2-1</span></button>
        <button class="btn sm" data-a="record" style="color:var(--p2)" aria-label="Record">${I.rec}<span>${Cam.recording ? 'Rec' : Cam.stream ? 'Camera' : 'Record'}${clips ? ` (${clips})` : ''}</span></button>
        <button class="btn sm" data-a="undo"${M.rounds.length ? '' : ' disabled'} aria-label="Undo">${I.undo}<span>Undo</span></button>
        <button class="btn sm ghost" data-a="newmatch">New</button>
@@ -629,6 +628,7 @@ function vScore() {
    <div class="target">First to <b class="num">${M.ptw}</b> · <span class="num">${M.fl}</span> launch errors a round${M.done ? ' · <b style="color:var(--good)">Match saved</b>' : ''}</div>
    ${tsel}${needDeck}${needCombo}
    <div class="arena${S.settings.swapSides ? ' swap' : ''}">${side(0)}${side(1)}</div>
+   <button class="launchbar" data-a="countdown"${M.done ? ' disabled' : ''}>${I.timer}<span>3-2-1 Go Shoot</span></button>
    <div class="card beys"><div class="eyebrow">${comp ? 'Decks' : 'Beys in play'}</div><div class="beygrid${S.settings.swapSides ? ' swap' : ''}"><div class="beycol s0">${beyPick(0)}</div><div class="beycol s1">${beyPick(1)}</div></div></div>
    <div class="syncrow"><button class="btn sm ghost" data-a="syncnow" aria-label="Sync now">${I.sync}Sync</button><span class="muted">${esc(Store.status)}</span></div>
    ${log ? `<div class="card"><div class="eyebrow" style="margin-bottom:8px">Round log</div><div class="log">${log}</div></div>` : ''}`;

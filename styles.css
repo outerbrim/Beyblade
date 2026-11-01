@@ -555,3 +555,11 @@ html.noscroll,html.noscroll body{overflow:hidden;overscroll-behavior:none}
 .swatches .sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
 .topbar.t-asym{display:flex}
 .topbar.t-asym .tabs{margin:0 auto}
+
+/* ===== v8: big countdown button ===== */
+.launchbar{width:100%;min-height:58px;border:0;border-radius:16px;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;
+  font-family:var(--display);font-weight:700;font-size:1.2rem;letter-spacing:.06em;text-transform:uppercase;transition:transform .08s}
+.launchbar svg{width:24px;height:24px}
+.launchbar:active{transform:scale(.98)}
+.launchbar[disabled]{opacity:.35;cursor:not-allowed}
+@media (orientation:landscape) and (max-height:540px){.launchbar{min-height:48px;font-size:1.05rem}}
